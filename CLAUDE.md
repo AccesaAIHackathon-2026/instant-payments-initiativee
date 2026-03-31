@@ -92,9 +92,12 @@ POST   /bank/sca                          # Confirm SCA challenge
 GET    /bank/accounts/{iban}              # Account + balances
 GET    /bank/proxy?alias={phone|email}    # Resolve alias → IBAN + name
 GET    /bank/vop?iban={}&name={}          # Verification of Payee
-POST   /bank/request-to-pay              # Merchant sends RTP to customer
-GET    /bank/incoming-rtp/{iban}          # Poll for incoming RTPs (2s interval)
-GET    /bank/transactions/{iban}          # Transaction history
+GET    /bank/transactions/{iban}          # Transaction history (retailer polls this for settlement in Flow B1)
+
+# Stretch — Request-to-Pay (Flow B2 only)
+POST   /bank/request-to-pay              # Retailer sends RTP to customer by alias
+GET    /bank/incoming-rtp/{iban}         # Alice polls for pending RTPs (2s interval)
+GET    /bank/rtp-status/{rtpId}          # Retailer polls for RTP settlement (2s interval)
 ```
 
 FIPS simulator internal endpoints (called only by bank simulator):
@@ -104,7 +107,9 @@ GET    /fips/status/{uetr}               # Poll status
 GET    /fips/transactions                 # Admin view
 ```
 
-**RTP notification model:** Polling at 2-second intervals from the mobile client. No WebSocket needed for POC.
+**Flow B1 (QR / MVP):** Alice scans QR → calls `POST /bank/pay` directly. Retailer polls `GET /bank/transactions/{iban}` every 2s to detect the incoming credit.
+
+**Flow B2 (RTP / Stretch):** Retailer calls `POST /bank/request-to-pay`. Alice polls `GET /bank/incoming-rtp/{iban}`. Retailer polls `GET /bank/rtp-status/{rtpId}`. No WebSocket needed for either.
 
 ---
 

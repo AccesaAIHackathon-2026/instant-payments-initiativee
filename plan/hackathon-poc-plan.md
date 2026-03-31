@@ -103,13 +103,14 @@ Transaction {
 
 ## Component 3 — User App (Consumer)
 
-**Role:** Mobile-first wallet app for the end user. Supports P2P payments and paying a retailer via QR code or Request-to-Pay.
+**Role:** Mobile-first wallet app for the end user. Supports P2P payments and paying a retailer via QR code scan (MVP) or incoming Request-to-Pay notification (stretch).
 
 **Flows to demo:**
 1. **P2P payment** — Alice sends €10 to Bob via phone number proxy lookup
-2. **Merchant payment** — Alice scans retailer QR code, approves RTP, pays instantly
-3. **Digital Euro balance** — Alice's wallet shows split view: bank balance + Digital Euro balance
-4. **Waterfall** — Alice pays €60 (more than her €50 DE balance), waterfall tops up from bank
+2. **QR merchant payment (MVP)** — Alice scans retailer QR code, confirms payment, pays instantly
+3. **RTP merchant payment (stretch)** — Alice receives incoming payment request notification, approves
+4. **Digital Euro balance** — Alice's wallet shows split view: bank balance + Digital Euro balance
+5. **Waterfall** — Alice pays €60 (more than her €50 DE balance), waterfall tops up from bank
 
 **Tech stack:**
 - Native Android app (Kotlin + Jetpack Compose)
@@ -128,22 +129,23 @@ Transaction {
 
 ## Component 4 — Retailer App (Merchant POS)
 
-**Role:** Point-of-sale terminal simulation. Generates QR codes for payment requests and shows real-time settlement confirmation.
+**Role:** Point-of-sale terminal simulation. Generates QR codes for customer-initiated payments (MVP) and can send Request-to-Pay for retailer-initiated payments (stretch).
 
 **Flows to demo:**
-1. **Generate QR** — retailer enters amount, generates EPC QR code (or RTP QR)
-2. **Request-to-Pay** — sends `pain.013` RTP to bank for a known customer alias
-3. **Settlement notification** — polls or receives webhook from bank when ACSC
+1. **Generate QR (MVP)** — retailer enters amount, generates QR code displayed on screen; Alice scans it
+2. **Request-to-Pay (stretch)** — retailer enters amount + customer phone, sends RTP; Alice approves in her app
+3. **Settlement notification** — polls bank for settlement confirmation after payment
 
 **Tech stack:**
-- Web app (React or simple HTML/JS)
-- QR code generation library (e.g. `qrcode.js`)
-- Calls Simulated Bank REST APIs
+- React (TypeScript) web app
+- `qrcode.react` for QR code generation
+- Calls Bank Simulator REST APIs only
 
 **Key screens:**
-- POS: enter amount + customer alias → send RTP or show QR
-- Awaiting payment: spinner / countdown
+- POS: enter amount → generate QR (large, scannable display)
+- Awaiting payment: spinner + polling bank for settlement
 - Confirmed: green screen with transaction reference + amount
+- (Stretch) RTP screen: enter amount + customer phone → send request → await approval
 
 ---
 
@@ -162,17 +164,48 @@ FIPS       →  Bank: pacs.002 { ACSC }
 Bank       →  Alice App: { status: SETTLED, reference: "..." }
 ```
 
-### Flow B — Merchant QR (Retailer → Alice)
+### Flow B1 — QR Merchant Payment / MVP (Alice-initiated)
+
+Alice drives the payment by scanning the retailer's QR code. The retailer is passive after generating it.
 
 ```
-Retailer App  →  Bank: POST /bank/request-to-pay { amount: 25, creditorIBAN: DE..99 }
-Bank          →  Alice App: push/poll notification (RTP received)
+Retailer App  →  cashier enters amount (€25)
+Retailer App  →  generates QR: { amount: 25, creditorIBAN: "DE..99", merchantName: "Retail Store GmbH" }
+Retailer App  →  displays QR on screen
+
+Alice App     →  opens QR scanner (ML Kit camera)
+Alice App     →  scans QR → parses payload
 Alice App     →  displays: "Pay €25 to Retail Store GmbH?"
-Alice App     →  Bank: POST /bank/sca { pin: "1234" }
+Alice App     →  Bank: POST /bank/pay { debtorIBAN: "DE..01", creditorIBAN: "DE..99", amount: 25 }
+Bank          →  returns SCA challenge token
+Alice App     →  Bank: POST /bank/sca { token, pin: "1234" }
 Bank          →  FIPS: POST /fips/submit { pacs.008 }
 FIPS          →  Bank: pacs.002 { ACSC }
-Bank          →  Retailer App: webhook { status: SETTLED }
-Retailer App  →  green confirmation screen
+Bank          →  Alice App: { status: SETTLED, uetr: "..." }
+
+Retailer App  →  polling GET /bank/transactions/DE..99 (every 2s)
+Retailer App  →  detects incoming credit → green confirmation screen
+```
+
+### Flow B2 — Request-to-Pay / Stretch (Retailer-initiated)
+
+The retailer sends a payment request to Alice. Alice is notified and approves.
+
+```
+Retailer App  →  cashier enters amount (€25) + customer phone (+49111000001)
+Retailer App  →  Bank: POST /bank/request-to-pay { amount: 25, debtorAlias: "+49111000001", creditorIBAN: "DE..99" }
+Bank          →  stores pending RTP (status: PENDING)
+Bank          →  returns { rtpId: "..." }
+
+Alice App     →  polling GET /bank/incoming-rtp/DE..01 (every 2s)
+Alice App     →  detects pending RTP → displays: "Pay €25 to Retail Store GmbH?" [Approve / Reject]
+Alice App     →  Bank: POST /bank/sca { rtpId, pin: "1234" }
+Bank          →  FIPS: POST /fips/submit { pacs.008 }
+FIPS          →  Bank: pacs.002 { ACSC }
+Bank          →  marks RTP status: SETTLED
+
+Retailer App  →  polling GET /bank/rtp-status/{rtpId} (every 2s)
+Retailer App  →  detects SETTLED → green confirmation screen
 ```
 
 ### Flow C — Digital Euro Waterfall
@@ -216,14 +249,15 @@ Bank → FIPS: pacs.008 (full €50)
 ## MVP vs Stretch Goals
 
 ### MVP (must work for demo)
-- [ ] P2P payment: Alice → Bob via phone proxy
-- [ ] Merchant QR payment: retailer → Alice via RTP
-- [ ] Real-time settlement confirmation on both sides
-- [ ] Digital Euro balance displayed separately
+- [ ] Flow A: P2P payment — Alice → Bob via phone proxy
+- [ ] Flow B1: QR merchant payment — Alice scans retailer QR, pays instantly
+- [ ] Real-time settlement confirmation on retailer screen (polling)
+- [ ] Digital Euro balance displayed separately from bank balance
 
-### Stretch
-- [ ] Waterfall top-up flow (Flow C)
-- [ ] VoP mismatch warning UI
+### Stretch (build only if core flows done before 15:00)
+- [ ] Flow B2: Request-to-Pay — retailer sends RTP, Alice approves in app
+- [ ] Flow C: Waterfall top-up
+- [ ] VoP mismatch warning in UI
 - [ ] Transaction history screen
 - [ ] Rejection scenario (insufficient funds)
 - [ ] Animated 10-second settlement countdown
