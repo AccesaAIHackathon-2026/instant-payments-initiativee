@@ -1,0 +1,499 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+
+.app-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  padding: 40px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #6b7280;
+  margin-bottom: 32px;
+}
+
+.input-group {
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.input-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.input-group label.amount-label {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.amount-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.currency-symbol {
+  position: absolute;
+  left: 16px;
+  font-size: 28px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.amount-input-wrapper input {
+  width: 100%;
+  padding: 16px 16px 16px 44px;
+  font-size: 32px;
+  text-align: center;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.amount-input-wrapper input:focus {
+  border-color: #2563eb;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn-primary:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.btn-secondary:hover {
+  border-color: #9ca3af;
+}
+
+.btn-simulate {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border: 2px solid #fbbf24;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-simulate:hover {
+  background: #fde68a;
+}
+
+.amount-display {
+  font-size: 36px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 16px 0;
+}
+
+.qr-container {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  background: #2563eb;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* Toast notifications — fixed position, no layout shift */
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  max-width: 500px;
+  text-align: center;
+  animation: toast-in 0.3s ease-out;
+}
+
+.toast--warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+
+.toast--success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.reference {
+  color: #9ca3af;
+  font-size: 12px;
+  font-family: monospace;
+  margin-bottom: 20px;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.success-icon {
+  color: #16a34a;
+  margin-bottom: 8px;
+}
+
+.detail {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.detail:last-of-type {
+  margin-bottom: 24px;
+}
+
+/* Logo */
+.pos-logo {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+  margin: -8px auto 12px;
+  display: block;
+}
+
+/* Centered amount label */
+.input-group--centered {
+  text-align: center;
+}
+
+.amount-label {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+/* POS layout — amount display left, numpad right */
+.pos-layout {
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  max-width: 900px;
+  width: 100%;
+}
+
+.pos-display {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pos-amount-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin: 32px 0;
+}
+
+.pos-currency {
+  font-size: 36px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.pos-value {
+  font-size: 56px;
+  font-weight: 700;
+  color: #1a1a2e;
+  letter-spacing: -1px;
+  min-width: 120px;
+  text-align: left;
+}
+
+/* Numpad */
+.numpad {
+  flex-shrink: 0;
+  width: 380px;
+  display: flex;
+  align-items: center;
+  padding: 28px;
+}
+
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  width: 100%;
+}
+
+.numpad-key {
+  aspect-ratio: 1.1;
+  font-size: 32px;
+  font-weight: 600;
+  color: #1a1a2e;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.1s;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.numpad-key:hover {
+  background: #e5e7eb;
+}
+
+.numpad-key:active {
+  background: #d1d5db;
+  transform: scale(0.95);
+}
+
+.numpad-key--delete {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.numpad-key--delete:hover {
+  background: #fecaca;
+}
+
+.numpad-key--delete:active {
+  background: #fca5a5;
+  transform: scale(0.95);
+}
+
+.close-btn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9ca3af;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.close-btn:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.auto-close-bar-track {
+  width: 100%;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.auto-close-bar-fill {
+  height: 100%;
+  background: #16a34a;
+  border-radius: 2px;
+  transition: width 50ms linear;
+}
+
+/* Payment methods section */
+.payment-methods-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #374151;
+  margin-top: 24px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.payment-methods-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.payment-method-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  background: #f9fafb;
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.1s;
+  touch-action: manipulation;
+  min-height: 140px;
+}
+
+.payment-method-btn:hover:not(:disabled) {
+  border-color: #9ca3af;
+  background: #f3f4f6;
+}
+
+.payment-method-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.payment-method-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.payment-method-btn--blinkpay {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.payment-method-btn--blinkpay:hover:not(:disabled) {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.payment-method-btn--blinkpay:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: #93c5fd;
+}
+
+.payment-method-logos {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.card-logo {
+  height: 24px;
+  width: auto;
+}
+
+.payment-method-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.payment-method-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.payment-method-sublabel {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.payment-method-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
