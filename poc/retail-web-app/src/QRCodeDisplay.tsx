@@ -2,6 +2,23 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { PaymentRequest } from './types';
 import type { SseStatus } from './useSSE';
 
+/** Build an EPC069-12 (GiroCode) QR payload for SEPA Credit Transfer. */
+function toEpcQr(p: PaymentRequest): string {
+  return [
+    'BCD',                                    // Service Tag
+    '002',                                    // Version
+    '1',                                      // Character set (1 = UTF-8)
+    'SCT',                                    // Identification (SEPA Credit Transfer)
+    '',                                       // BIC (optional in v002)
+    p.creditorName,                           // Beneficiary name (max 70)
+    p.creditorIban,                           // Beneficiary IBAN
+    `${p.currency}${p.amount.toFixed(2)}`,    // Amount (e.g. "EUR25.00")
+    '',                                       // Purpose code (optional)
+    '',                                       // Structured remittance ref (optional)
+    p.reference,                              // Unstructured remittance info (max 140)
+  ].join('\n');
+}
+
 interface Props {
   payment: PaymentRequest;
   wsStatus: SseStatus;
@@ -10,13 +27,7 @@ interface Props {
 }
 
 export function QRCodeDisplay({ payment, wsStatus, onCancel, onSimulate }: Props) {
-  const qrValue = JSON.stringify({
-    creditorIban: payment.creditorIban,
-    creditorName: payment.creditorName,
-    amount: payment.amount,
-    currency: payment.currency,
-    reference: payment.reference,
-  });
+  const qrValue = toEpcQr(payment);
 
   return (
     <div className="card">

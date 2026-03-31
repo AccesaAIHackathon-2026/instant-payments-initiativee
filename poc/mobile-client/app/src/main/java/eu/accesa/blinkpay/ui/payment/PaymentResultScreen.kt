@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,13 +18,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun PaymentResultScreen(
     success: Boolean,
     uetr: String?,
-    message: String,
+    reason: String?,
     onDone: () -> Unit,
 ) {
     Scaffold { innerPadding ->
@@ -33,7 +33,7 @@ fun PaymentResultScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(32.dp),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -41,11 +41,8 @@ fun PaymentResultScreen(
                 imageVector = if (success) Icons.Default.CheckCircle else Icons.Default.Error,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = if (success) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
+                tint = if (success) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.error,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -56,35 +53,35 @@ fun PaymentResultScreen(
                 color = MaterialTheme.colorScheme.onBackground,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            )
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (success && uetr != null) {
-                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Reference: ${uetr.take(8)}...",
+                    text = "Transaction ID",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                )
+                Text(
+                    text = uetr,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            if (!success && reason != null) {
+                Text(
+                    text = reason,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
                 )
             }
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            Button(
-                onClick = onDone,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-            ) {
-                Text(
-                    text = "Back to Home",
-                    style = MaterialTheme.typography.titleMedium,
-                )
+            Button(onClick = onDone) {
+                Text("Done")
             }
         }
     }

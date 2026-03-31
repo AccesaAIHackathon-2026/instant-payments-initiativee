@@ -1,91 +1,81 @@
 package eu.accesa.blinkpay.ui.payment
 
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import eu.accesa.blinkpay.biometric.BiometricAvailability
-import eu.accesa.blinkpay.biometric.BiometricHelper
+import eu.accesa.blinkpay.data.api.ApiClient
+import eu.accesa.blinkpay.data.dto.PaymentRequestDto
+import eu.accesa.blinkpay.data.dto.ScaRequestDto
 import eu.accesa.blinkpay.data.model.QrPaymentData
-import eu.accesa.blinkpay.data.repository.PaymentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-sealed class PaymentState {
-    data object Idle : PaymentState()
-    data object Authenticating : PaymentState()
-    data object Processing : PaymentState()
-    data class Success(val uetr: String) : PaymentState()
-    data class Failed(val message: String) : PaymentState()
+/** Alice's hardcoded IBAN for the POC. */
+private const val ALICE_IBAN = "DE89370400440532013001"
+private const val STUB_PIN = "1234"
+
+sealed interface PaymentUiState {
+    data class Confirming(val payment: QrPaymentData) : PaymentUiState
+    object Processing : PaymentUiState
+    data class Success(val uetr: String) : PaymentUiState
+    data class Failed(val reason: String) : PaymentUiState
 }
 
 class PaymentViewModel : ViewModel() {
 
-    private val _state = MutableStateFlow<PaymentState>(PaymentState.Idle)
-    val state: StateFlow<PaymentState> = _state
+    private val _uiState = MutableStateFlow<PaymentUiState?>(null)
+    val uiState: StateFlow<PaymentUiState?> = _uiState
 
-    private val repository = PaymentRepository()
+    fun setPayment(payment: QrPaymentData) {
+        _uiState.value = PaymentUiState.Confirming(payment)
+    }
 
-    fun confirmPayment(activity: FragmentActivity, qrData: QrPaymentData) {
+    /**
+     * Executes the full payment flow:
+     * 1. POST /bank/pay  → receive SCA challenge
+     * 2. POST /bank/sca  → confirm with stub PIN → settlement result
+     */
+    fun confirmPayment(payment: QrPaymentData) {
+        _uiState.value = PaymentUiState.Processing
+
         viewModelScope.launch {
-            _state.value = PaymentState.Authenticating
+            try {
+                val api = ApiClient.bankApi
 
-            val biometricHelper = BiometricHelper(activity)
-            val useBiometric = biometricHelper.checkAvailability() == BiometricAvailability.AVAILABLE
-
-            val authenticated = if (useBiometric) {
-                biometricHelper.authenticate(
-                    title = "Confirm Payment",
-                    subtitle = "Verify to pay €${"%.2f".format(qrData.amount)} to ${qrData.creditorName}",
+                // Step 1 — initiate payment
+                val initiated = api.initiatePayment(
+                    PaymentRequestDto(
+                        debtorIBAN = ALICE_IBAN,
+                        creditorIBAN = payment.creditorIban,
+                        amount = payment.amount,
+                        remittanceInfo = payment.reference,
+                    )
                 )
-            } else {
-                // PIN fallback handled by UI — if we reach here, PIN was already verified
-                true
+
+                // Step 2 — SCA confirmation with stub PIN
+                val result = api.confirmSca(
+                    ScaRequestDto(
+                        uetr = initiated.uetr,
+                        pin = STUB_PIN,
+                    )
+                )
+
+                if (result.status == "ACSC") {
+                    _uiState.value = PaymentUiState.Success(uetr = result.uetr)
+                } else {
+                    _uiState.value = PaymentUiState.Failed(
+                        reason = result.rejectReason ?: "Payment rejected"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = PaymentUiState.Failed(
+                    reason = e.message ?: "Network error"
+                )
             }
-
-            if (!authenticated) {
-                _state.value = PaymentState.Failed("Authentication cancelled")
-                return@launch
-            }
-
-            executePayment(qrData)
-        }
-    }
-
-    fun confirmPaymentWithPin(qrData: QrPaymentData, pin: String): Boolean {
-        if (pin != "1234") return false
-
-        viewModelScope.launch {
-            executePayment(qrData)
-        }
-        return true
-    }
-
-    private suspend fun executePayment(qrData: QrPaymentData) {
-        _state.value = PaymentState.Processing
-
-        try {
-            // Step 1: Initiate payment — POST /bank/pay
-            val initiated = repository.initiatePayment(qrData)
-
-            // Step 2: Confirm SCA — POST /bank/sca with uetr + pin "1234"
-            val result = repository.confirmSca(uetr = initiated.uetr)
-
-            // Step 3: Check result
-            if (result.status == "ACSC") {
-                _state.value = PaymentState.Success(uetr = result.uetr)
-            } else {
-                val reason = result.rejectReason ?: "Unknown"
-                _state.value = PaymentState.Failed("Payment rejected: $reason")
-            }
-        } catch (e: Exception) {
-            _state.value = PaymentState.Failed(
-                e.message ?: "Payment failed. Please try again."
-            )
         }
     }
 
     fun reset() {
-        _state.value = PaymentState.Idle
+        _uiState.value = null
     }
 }

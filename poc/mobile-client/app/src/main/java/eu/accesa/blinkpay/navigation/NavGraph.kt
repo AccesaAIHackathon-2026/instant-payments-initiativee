@@ -1,36 +1,45 @@
 package eu.accesa.blinkpay.navigation
 
-import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.google.gson.Gson
 import eu.accesa.blinkpay.data.model.QrPaymentData
 import eu.accesa.blinkpay.ui.home.HomeScreen
 import eu.accesa.blinkpay.ui.lock.BiometricLockScreen
 import eu.accesa.blinkpay.ui.payment.PaymentConfirmScreen
 import eu.accesa.blinkpay.ui.payment.PaymentResultScreen
+import eu.accesa.blinkpay.ui.payment.PaymentViewModel
 import eu.accesa.blinkpay.ui.qr.QrScanScreen
+import java.math.BigDecimal
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 object Routes {
     const val LOCK = "lock"
     const val HOME = "home"
     const val QR_SCAN = "qr_scan"
-    const val PAYMENT_CONFIRM = "payment_confirm/{qrDataJson}"
-    const val PAYMENT_RESULT = "payment_result/{success}/{message}?uetr={uetr}"
 
-    fun paymentConfirm(qrData: QrPaymentData): String {
-        val json = Uri.encode(Gson().toJson(qrData))
-        return "payment_confirm/$json"
+    // Payment confirm route with encoded QR data as arguments
+    const val PAYMENT_CONFIRM =
+        "payment_confirm/{creditorName}/{creditorIban}/{amount}/{currency}/{reference}"
+
+    fun paymentConfirm(p: QrPaymentData): String {
+        val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
+        return "payment_confirm/${enc(p.creditorName)}/${enc(p.creditorIban)}" +
+                "/${p.amount.toPlainString()}/${p.currency}/${enc(p.reference)}"
     }
 
-    fun paymentResult(success: Boolean, message: String, uetr: String? = null): String {
-        val encodedMessage = Uri.encode(message)
-        return "payment_result/$success/$encodedMessage?uetr=${uetr ?: ""}"
+    // Payment result route
+    const val PAYMENT_RESULT = "payment_result/{success}/{uetr}/{reason}"
+
+    fun paymentResult(success: Boolean, uetr: String?, reason: String?): String {
+        val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
+        return "payment_result/$success/${enc(uetr ?: "")}/${enc(reason ?: "")}"
     }
 }
 
@@ -52,16 +61,14 @@ fun BlinkPayNavGraph(navController: NavHostController) {
 
         composable(Routes.HOME) {
             HomeScreen(
-                onScanQr = {
-                    navController.navigate(Routes.QR_SCAN)
-                }
+                onScanAndPay = { navController.navigate(Routes.QR_SCAN) }
             )
         }
 
         composable(Routes.QR_SCAN) {
             QrScanScreen(
-                onQrScanned = { qrData ->
-                    navController.navigate(Routes.paymentConfirm(qrData)) {
+                onScanned = { payment ->
+                    navController.navigate(Routes.paymentConfirm(payment)) {
                         popUpTo(Routes.QR_SCAN) { inclusive = true }
                     }
                 },
@@ -71,19 +78,39 @@ fun BlinkPayNavGraph(navController: NavHostController) {
 
         composable(
             route = Routes.PAYMENT_CONFIRM,
-            arguments = listOf(navArgument("qrDataJson") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("creditorName") { type = NavType.StringType },
+                navArgument("creditorIban") { type = NavType.StringType },
+                navArgument("amount") { type = NavType.StringType },
+                navArgument("currency") { type = NavType.StringType },
+                navArgument("reference") { type = NavType.StringType },
+            ),
         ) { backStackEntry ->
-            val json = backStackEntry.arguments?.getString("qrDataJson") ?: ""
-            val qrData = remember(json) { Gson().fromJson(json, QrPaymentData::class.java) }
+            val args = backStackEntry.arguments!!
+            val dec = { key: String -> URLDecoder.decode(args.getString(key)!!, "UTF-8") }
+
+            val payment = remember {
+                QrPaymentData(
+                    creditorName = dec("creditorName"),
+                    creditorIban = dec("creditorIban"),
+                    amount = BigDecimal(args.getString("amount")!!),
+                    currency = dec("currency"),
+                    reference = dec("reference"),
+                )
+            }
+
+            val paymentViewModel: PaymentViewModel = viewModel()
+            remember { paymentViewModel.setPayment(payment); true }
 
             PaymentConfirmScreen(
-                qrData = qrData,
-                onPaymentComplete = { success, uetr, message ->
-                    navController.navigate(Routes.paymentResult(success, message, uetr)) {
+                payment = payment,
+                viewModel = paymentViewModel,
+                onResult = { success, uetr, reason ->
+                    navController.navigate(Routes.paymentResult(success, uetr, reason)) {
                         popUpTo(Routes.HOME)
                     }
                 },
-                onBack = { navController.popBackStack() },
+                onCancel = { navController.popBackStack(Routes.HOME, false) },
             )
         }
 
@@ -91,25 +118,19 @@ fun BlinkPayNavGraph(navController: NavHostController) {
             route = Routes.PAYMENT_RESULT,
             arguments = listOf(
                 navArgument("success") { type = NavType.BoolType },
-                navArgument("message") { type = NavType.StringType },
-                navArgument("uetr") {
-                    type = NavType.StringType
-                    defaultValue = ""
-                },
+                navArgument("uetr") { type = NavType.StringType },
+                navArgument("reason") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
-            val success = backStackEntry.arguments?.getBoolean("success") ?: false
-            val message = backStackEntry.arguments?.getString("message") ?: ""
-            val uetr = backStackEntry.arguments?.getString("uetr")?.ifEmpty { null }
+            val args = backStackEntry.arguments!!
+            val dec = { key: String -> URLDecoder.decode(args.getString(key)!!, "UTF-8") }
 
             PaymentResultScreen(
-                success = success,
-                uetr = uetr,
-                message = message,
+                success = args.getBoolean("success"),
+                uetr = dec("uetr").ifBlank { null },
+                reason = dec("reason").ifBlank { null },
                 onDone = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
+                    navController.popBackStack(Routes.HOME, false)
                 },
             )
         }
