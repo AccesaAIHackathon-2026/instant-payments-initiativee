@@ -41,8 +41,8 @@
 - 10-second timeout enforcement
 
 **Tech stack:**
-- JVM (Kotlin/Spring Boot) REST service
-- In-memory transaction store (no persistence needed for POC)
+- Java 21 + Spring Boot 3.x REST service
+- In-memory transaction store (`ConcurrentHashMap`, no persistence needed for POC)
 - Endpoints:
   - `POST /fips/submit` — receive `pacs.008`, return `pacs.002`
   - `GET  /fips/status/{uetr}` — transaction status
@@ -80,8 +80,8 @@ Transaction {
 - Translates REST calls from apps into `pacs.008` toward FIPS network
 
 **Tech stack:**
-- JVM (Kotlin/Spring Boot) REST service
-- In-memory account store (pre-seeded)
+- Java 21 + Spring Boot 3.x REST service
+- In-memory account store (`ConcurrentHashMap`, pre-seeded)
 - Endpoints:
   - `POST /bank/pay` — initiate payment (triggers pacs.008 to FIPS)
   - `GET  /bank/accounts/{iban}` — balance + transaction history
@@ -112,13 +112,16 @@ Transaction {
 4. **Waterfall** — Alice pays €60 (more than her €50 DE balance), waterfall tops up from bank
 
 **Tech stack:**
-- Web app (React or simple HTML/JS) OR Kotlin Android (pick based on team)
-- Calls Simulated Bank REST APIs only (no direct FIPS access)
+- Native Android app (Kotlin + Jetpack Compose)
+- Retrofit2 + OkHttp for REST calls to Bank Simulator
+- ML Kit Barcode Scanning for QR code reading
+- MVVM: `ViewModel` + `StateFlow` for UI state
+- Navigation Component for screen routing
 
 **Key screens:**
 - Home: balances (bank + Digital Euro)
 - Send: enter phone/email → resolve to name via VoP → confirm → SCA PIN
-- QR Scanner: scan retailer QR → show payment details → confirm → SCA PIN
+- QR Scanner: camera via ML Kit → parse payment details → confirm → SCA PIN
 - History: recent transactions
 
 ---
@@ -231,12 +234,14 @@ Bank → FIPS: pacs.008 (full €50)
 
 | Decision | Choice | Reason |
 |----------|--------|--------|
-| Backend language | Kotlin + Spring Boot | Aligns with team expertise and ISO 20022 tooling |
-| Frontend | React (web) | Fastest for hackathon; avoids mobile build complexity |
+| Backend language | Java 21 + Spring Boot 3.x | Team expertise; Java records for clean DTOs |
+| Consumer client | Android + Kotlin (Jetpack Compose) | Native UX; ML Kit QR scanning built-in |
+| Retailer client | React (TypeScript) | Fastest for a web POS; no mobile needed |
 | ISO 20022 messages | Simplified JSON representation | Full XML not needed for internal simulation |
 | Inter-service communication | REST/HTTP | Simple, no message broker overhead for POC |
-| Persistence | In-memory (no DB) | Speed; data survives the demo session |
+| Persistence | In-memory (ConcurrentHashMap) | Speed; data survives the demo session |
 | SCA | PIN stub (1234) | Real biometrics out of scope for 1-day POC |
+| Android network | 10.0.2.2:8080 (emulator) | Emulator localhost alias for host machine |
 
 ---
 
