@@ -5,12 +5,17 @@ import eu.accesa.blinkpay.bank.dto.PaymentInitiatedResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentRequest;
 import eu.accesa.blinkpay.bank.dto.PaymentResult;
 import eu.accesa.blinkpay.bank.dto.ProxyLookupResponse;
+import eu.accesa.blinkpay.bank.dto.RegisterRequest;
+import eu.accesa.blinkpay.bank.dto.RegisterResponse;
 import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
+import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.model.Transaction;
 import eu.accesa.blinkpay.bank.service.BankService;
+import eu.accesa.blinkpay.bank.service.SseNotificationService;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,9 +34,27 @@ import java.util.UUID;
 public class BankController {
 
     private final BankService bankService;
+    private final SseNotificationService sse;
 
-    public BankController(BankService bankService) {
+    public BankController(BankService bankService, SseNotificationService sse) {
         this.bankService = bankService;
+        this.sse = sse;
+    }
+
+    /** Register a new consumer or merchant account. */
+    @PostMapping("/register")
+    public ResponseEntity<RegisterResponse> register(@RequestBody RegisterRequest request) {
+        return ResponseEntity.status(201).body(bankService.register(request));
+    }
+
+    /**
+     * SSE stream — retailer subscribes when the QR code is displayed.
+     * Receives a "settlement" event the moment Alice's payment clears.
+     * React usage: new EventSource('/bank/payment-events/{iban}')
+     */
+    @GetMapping(value = "/payment-events/{iban}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter paymentEvents(@PathVariable String iban) {
+        return sse.subscribe(iban);
     }
 
     /** Proxy lookup: phone/email → IBAN + name */
@@ -45,10 +69,16 @@ public class BankController {
         return bankService.verifyPayee(iban, name);
     }
 
-    /** Account details + balances */
+    /** Account details + bank balance (walletId links to the DE custody wallet) */
     @GetMapping("/accounts/{iban}")
     public AccountView account(@PathVariable String iban) {
         return bankService.getAccount(iban);
+    }
+
+    /** Digital Euro custody wallet — balance and owner */
+    @GetMapping("/wallet/{walletId}")
+    public WalletView wallet(@PathVariable java.util.UUID walletId) {
+        return bankService.getWallet(walletId);
     }
 
     /** Transaction history for settlement polling (retailer polls this in Flow B1) */

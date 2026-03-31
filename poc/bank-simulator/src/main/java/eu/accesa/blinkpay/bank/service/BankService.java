@@ -5,14 +5,18 @@ import eu.accesa.blinkpay.bank.dto.PaymentInitiatedResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentRequest;
 import eu.accesa.blinkpay.bank.dto.PaymentResult;
 import eu.accesa.blinkpay.bank.dto.ProxyLookupResponse;
+import eu.accesa.blinkpay.bank.dto.RegisterRequest;
+import eu.accesa.blinkpay.bank.dto.RegisterResponse;
 import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
+import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.fips.FipsClient;
 import eu.accesa.blinkpay.bank.fips.FipsRejectedException;
 import eu.accesa.blinkpay.bank.model.Account;
-import eu.accesa.blinkpay.bank.model.InsufficientFundsException;
+import eu.accesa.blinkpay.bank.model.AccountType;
+import eu.accesa.blinkpay.bank.model.DigitalEuroWallet;
 import eu.accesa.blinkpay.bank.model.RequestToPay;
 import eu.accesa.blinkpay.bank.model.RtpStatus;
 import eu.accesa.blinkpay.bank.model.Transaction;
@@ -20,6 +24,7 @@ import eu.accesa.blinkpay.bank.model.TransactionStatus;
 import eu.accesa.blinkpay.bank.model.VopResult;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +35,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Core bank simulator business logic.
  *
- * Orchestrates: proxy lookup → VoP → SCA challenge issuance → balance check →
- * waterfall → FIPS submission → balance mutation → transaction recording.
+ * Orchestrates: proxy lookup → VoP → SCA challenge issuance →
+ * DE waterfall → bank debit → FIPS submission → credit → transaction recording.
+ *
+ * Digital Euro custody is separated from the commercial bank account:
+ *   - {@link AccountStore}  manages bank balances (commercial bank liability)
+ *   - {@link WalletStore}   manages DE balances (custodied on behalf of ECB)
  */
 @Service
 public class BankService {
@@ -39,17 +48,53 @@ public class BankService {
     private static final String CORRECT_PIN = "1234";
 
     private final AccountStore accounts;
+    private final WalletStore wallets;
     private final FipsClient fips;
+    private final SseNotificationService sse;
 
-    // Pending payments awaiting SCA confirmation: challengeToken → PaymentRequest context
+    // Pending payments awaiting SCA confirmation: uetr → PendingPayment context
     private final Map<String, PendingPayment> pendingPayments = new ConcurrentHashMap<>();
 
     // RTP store: rtpId → RequestToPay
     private final Map<UUID, RequestToPay> rtpStore = new ConcurrentHashMap<>();
 
-    public BankService(AccountStore accounts, FipsClient fips) {
+    public BankService(AccountStore accounts, WalletStore wallets,
+                       FipsClient fips, SseNotificationService sse) {
         this.accounts = accounts;
-        this.fips = fips;
+        this.wallets  = wallets;
+        this.fips     = fips;
+        this.sse      = sse;
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration
+    // -------------------------------------------------------------------------
+
+    public RegisterResponse register(RegisterRequest req) {
+        if (req.accountType() == null) throw new ValidationException("accountType is required");
+        if (req.holderName() == null || req.holderName().isBlank()) throw new ValidationException("holderName is required");
+        if (req.accountType() == AccountType.CONSUMER && (req.phoneAlias() == null || req.phoneAlias().isBlank())) {
+            throw new ValidationException("phoneAlias is required for CONSUMER accounts");
+        }
+        if (req.accountType() == AccountType.MERCHANT && req.phoneAlias() != null) {
+            throw new ValidationException("phoneAlias must not be set for MERCHANT accounts");
+        }
+
+        BigDecimal bank = req.accountType() == AccountType.MERCHANT ? BigDecimal.ZERO
+                : (req.bankBalance() != null ? req.bankBalance() : BigDecimal.ZERO);
+
+        Account acc = accounts.register(req.holderName(), req.phoneAlias(), req.accountType(), bank);
+
+        // Consumers get a Digital Euro custody wallet; merchants do not.
+        UUID walletId = null;
+        if (acc.getAccountType() == AccountType.CONSUMER) {
+            BigDecimal initialWallet = req.digitalEuroBalance() != null
+                    ? req.digitalEuroBalance() : BigDecimal.ZERO;
+            walletId = wallets.create(acc.getIban(), initialWallet).getWalletId();
+        }
+
+        return new RegisterResponse(acc.getIban(), acc.getHolderName(), acc.getAccountType(),
+                acc.getPhoneAlias(), acc.getBankBalance(), walletId);
     }
 
     // -------------------------------------------------------------------------
@@ -91,6 +136,16 @@ public class BankService {
         return acc.getTransactions().stream()
                 .sorted(Comparator.comparing(Transaction::createdAt).reversed())
                 .toList();
+    }
+
+    // -------------------------------------------------------------------------
+    // Wallet info
+    // -------------------------------------------------------------------------
+
+    public WalletView getWallet(UUID walletId) {
+        DigitalEuroWallet wallet = wallets.findByWalletId(walletId)
+                .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        return toWalletView(wallet);
     }
 
     // -------------------------------------------------------------------------
@@ -194,22 +249,47 @@ public class BankService {
         Account debtor   = accounts.findByIban(p.debtorIBAN()).orElseThrow();
         Account creditor = accounts.findByIban(p.creditorIBAN()).orElseThrow();
 
-        // Balance check before hitting FIPS
-        try {
-            debtor.debit(p.amount());
-        } catch (InsufficientFundsException e) {
+        // --- Balance check (wallet + bank combined) ---------------------------
+        Optional<DigitalEuroWallet> wallet = wallets.findByOwnerIban(p.debtorIBAN());
+        BigDecimal deBalance   = wallet.map(DigitalEuroWallet::getBalance).orElse(BigDecimal.ZERO);
+        BigDecimal totalFunds  = debtor.getBankBalance().add(deBalance);
+
+        if (totalFunds.compareTo(p.amount()) < 0) {
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
                     p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
             debtor.addTransaction(rejected);
             return new PaymentResult(p.uetr(), TransactionStatus.RJCT, "AM04");
         }
 
+        // --- Waterfall: DE wallet first, bank account for any shortfall -------
+        BigDecimal bankDebited   = BigDecimal.ZERO;
+        BigDecimal walletDebited = BigDecimal.ZERO;
+
+        BigDecimal remaining = p.amount();
+        if (wallet.isPresent() && deBalance.compareTo(BigDecimal.ZERO) > 0) {
+            remaining    = wallet.get().debit(remaining);
+            walletDebited = p.amount().subtract(remaining);
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            debtor.debit(remaining);
+            bankDebited = remaining;
+        }
+
+        // --- FIPS submission --------------------------------------------------
+        final BigDecimal finalWalletDebited = walletDebited;
+        final BigDecimal finalBankDebited   = bankDebited;
         try {
             fips.submit(p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(),
-                    p.debtorName(), p.creditorName(), p.uetr().toString(), p.remittanceInfo());
+                    p.debtorName(), p.creditorName(), "E2E-" + p.uetr(), p.remittanceInfo());
         } catch (FipsRejectedException e) {
-            // Roll back debit — FIPS refused (e.g. duplicate UETR)
-            debtor.credit(p.amount());
+            // Roll back exactly what was debited
+            if (finalBankDebited.compareTo(BigDecimal.ZERO) > 0) {
+                debtor.credit(finalBankDebited);
+            }
+            if (wallet.isPresent() && finalWalletDebited.compareTo(BigDecimal.ZERO) > 0) {
+                wallet.get().credit(finalWalletDebited);
+            }
+
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
                     p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
             debtor.addTransaction(rejected);
@@ -222,6 +302,9 @@ public class BankService {
                 p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
         debtor.addTransaction(settled);
         creditor.addTransaction(settled);
+
+        sse.notifySettlement(p.creditorIBAN(), settled);
+
         return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
     }
 
@@ -254,12 +337,19 @@ public class BankService {
     }
 
     private AccountView toView(Account acc) {
+        UUID walletId = wallets.findByOwnerIban(acc.getIban())
+                .map(DigitalEuroWallet::getWalletId)
+                .orElse(null);
         return new AccountView(acc.getIban(), acc.getHolderName(),
-                acc.getBankBalance(), acc.getDigitalEuroBalance(),
+                acc.getBankBalance(), walletId,
                 acc.getTransactions().stream()
                         .sorted(Comparator.comparing(Transaction::createdAt).reversed())
                         .limit(20)
                         .toList());
+    }
+
+    private WalletView toWalletView(DigitalEuroWallet w) {
+        return new WalletView(w.getWalletId(), w.getOwnerIban(), w.getBalance());
     }
 
     private RtpView toRtpView(RequestToPay rtp) {
@@ -270,5 +360,5 @@ public class BankService {
     // Pending payment context while awaiting SCA
     record PendingPayment(UUID uetr, String debtorIBAN, String creditorIBAN,
                           String debtorName, String creditorName,
-                          java.math.BigDecimal amount, String remittanceInfo) {}
+                          BigDecimal amount, String remittanceInfo) {}
 }

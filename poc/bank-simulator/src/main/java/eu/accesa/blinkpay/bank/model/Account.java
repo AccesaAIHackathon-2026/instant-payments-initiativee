@@ -5,50 +5,42 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * In-memory account entity.
+ * In-memory commercial bank account entity.
  *
- * Holds two distinct balances per the Digital Euro two-wallet model:
- *   - bankBalance      — commercial bank money (traditional)
- *   - digitalEuroBalance — Digital Euro (CBDC, settled via TIPS DE module)
+ * Holds only the traditional bank balance. Digital Euro custody is managed
+ * separately by {@link eu.accesa.blinkpay.bank.model.DigitalEuroWallet} and
+ * {@link eu.accesa.blinkpay.bank.service.WalletStore}.
  *
- * All monetary mutations are synchronised on the instance to keep the POC
- * thread-safe without a full transaction manager.
+ * All monetary mutations are synchronised on the instance.
  */
 public class Account {
 
     private final String iban;
     private final String holderName;
-    private final String phoneAlias;   // nullable — retail store has none
+    private final String phoneAlias;   // nullable — merchants have none
+    private final AccountType accountType;
 
     private BigDecimal bankBalance;
-    private BigDecimal digitalEuroBalance;
 
     private final List<Transaction> transactions = new ArrayList<>();
 
     public Account(String iban, String holderName, String phoneAlias,
-                   BigDecimal bankBalance, BigDecimal digitalEuroBalance) {
+                   BigDecimal bankBalance, AccountType accountType) {
         this.iban = iban;
         this.holderName = holderName;
         this.phoneAlias = phoneAlias;
         this.bankBalance = bankBalance;
-        this.digitalEuroBalance = digitalEuroBalance;
+        this.accountType = accountType;
     }
 
     // --- thread-safe balance operations ------------------------------------
 
+    /** Debits the bank balance only. Caller is responsible for the DE waterfall. */
     public synchronized void debit(BigDecimal amount) {
-        if (bankBalance.add(digitalEuroBalance).compareTo(amount) < 0) {
-            throw new InsufficientFundsException(iban, amount,
-                    bankBalance.add(digitalEuroBalance));
+        if (bankBalance.compareTo(amount) < 0) {
+            throw new InsufficientFundsException(iban, amount, bankBalance);
         }
-        // Waterfall: spend Digital Euro first, top up from bank if needed
-        if (digitalEuroBalance.compareTo(amount) >= 0) {
-            digitalEuroBalance = digitalEuroBalance.subtract(amount);
-        } else {
-            BigDecimal shortfall = amount.subtract(digitalEuroBalance);
-            digitalEuroBalance = BigDecimal.ZERO;
-            bankBalance = bankBalance.subtract(shortfall);
-        }
+        bankBalance = bankBalance.subtract(amount);
     }
 
     public synchronized void credit(BigDecimal amount) {
@@ -65,10 +57,10 @@ public class Account {
 
     // --- getters -----------------------------------------------------------
 
-    public String getIban() { return iban; }
-    public String getHolderName() { return holderName; }
-    public String getPhoneAlias() { return phoneAlias; }
+    public String getIban()            { return iban; }
+    public String getHolderName()      { return holderName; }
+    public String getPhoneAlias()      { return phoneAlias; }
+    public AccountType getAccountType(){ return accountType; }
 
     public synchronized BigDecimal getBankBalance() { return bankBalance; }
-    public synchronized BigDecimal getDigitalEuroBalance() { return digitalEuroBalance; }
 }
