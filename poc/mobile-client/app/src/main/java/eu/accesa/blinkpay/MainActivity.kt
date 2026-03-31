@@ -11,11 +11,13 @@ import eu.accesa.blinkpay.navigation.BlinkPayNavGraph
 import eu.accesa.blinkpay.navigation.Routes
 import eu.accesa.blinkpay.ui.theme.BlinkPayTheme
 import eu.accesa.blinkpay.util.ServiceLocator
+import eu.accesa.blinkpay.util.UserSession
 
 class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        UserSession.init(applicationContext)
         enableEdgeToEdge()
 
         setContent {

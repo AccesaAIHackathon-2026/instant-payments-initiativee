@@ -13,4 +13,10 @@ export interface PaymentResult {
   timestamp: string;
 }
 
-export type AppScreen = 'input' | 'qr' | 'success';
+export interface PaymentRejected {
+  amount: number;
+  currency: string;
+  rejectReason: string;
+}
+
+export type AppScreen = 'input' | 'qr' | 'success' | 'failed';

@@ -3,15 +3,14 @@ package eu.accesa.blinkpay.ui.payment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.accesa.blinkpay.data.api.ApiClient
-import eu.accesa.blinkpay.data.dto.PaymentRequestDto
-import eu.accesa.blinkpay.data.dto.ScaRequestDto
+import eu.accesa.blinkpay.data.api.dto.PaymentRequest
+import eu.accesa.blinkpay.data.api.dto.ScaRequest
 import eu.accesa.blinkpay.data.model.QrPaymentData
+import eu.accesa.blinkpay.util.UserSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/** Alice's hardcoded IBAN for the POC. */
-private const val ALICE_IBAN = "DE89370400440532013001"
 private const val STUB_PIN = "1234"
 
 sealed interface PaymentUiState {
@@ -44,17 +43,18 @@ class PaymentViewModel : ViewModel() {
 
                 // Step 1 — initiate payment
                 val initiated = api.initiatePayment(
-                    PaymentRequestDto(
-                        debtorIBAN = ALICE_IBAN,
+                    PaymentRequest(
+                        debtorIBAN = UserSession.iban,
                         creditorIBAN = payment.creditorIban,
-                        amount = payment.amount,
+                        amount = payment.amount.toDouble(),
+                        creditorReference = payment.creditorReference,
                         remittanceInfo = payment.reference,
                     )
                 )
 
                 // Step 2 — SCA confirmation with stub PIN
                 val result = api.confirmSca(
-                    ScaRequestDto(
+                    ScaRequest(
                         uetr = initiated.uetr,
                         pin = STUB_PIN,
                     )

@@ -11,6 +11,8 @@ import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
+import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
+import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.model.AccountType;
 import eu.accesa.blinkpay.bank.model.TransactionStatus;
@@ -281,7 +283,7 @@ class BankFlowIT {
 
             // Step 1 — initiate
             PaymentRequest payReq = new PaymentRequest(
-                    payerIban, null, payeeAlias, amount, "test transfer");
+                    payerIban, null, payeeAlias, amount, null, "test transfer");
             PaymentInitiatedResponse initiated = rest.postForObject(
                     "/bank/pay", payReq, PaymentInitiatedResponse.class);
 
@@ -298,13 +300,13 @@ class BankFlowIT {
             assertThat(result.status()).isEqualTo(TransactionStatus.ACSC);
             assertThat(result.rejectReason()).isNull();
 
-            // Step 3 — verify balances: DE balance spent first (waterfall)
+            // Step 3 — verify balances: A2A debits bank only, DE wallet untouched
             AccountView payer = rest.getForObject("/bank/accounts/{iban}", AccountView.class, payerIban);
             AccountView payee = rest.getForObject("/bank/accounts/{iban}", AccountView.class, payeeIban);
             WalletView payerWallet = rest.getForObject("/bank/wallet/{id}", WalletView.class, payer.walletId());
 
-            assertThat(payerWallet.balance()).isEqualByComparingTo("35.00"); // 60 - 25
-            assertThat(payer.bankBalance()).isEqualByComparingTo("500.00");  // unchanged
+            assertThat(payerWallet.balance()).isEqualByComparingTo("60.00"); // DE wallet untouched
+            assertThat(payer.bankBalance()).isEqualByComparingTo("475.00");  // 500 - 25
             assertThat(payee.bankBalance()).isEqualByComparingTo("125.00");  // 100 + 25
         }
 
@@ -318,7 +320,8 @@ class BankFlowIT {
             BigDecimal amount = new BigDecimal("50.00");
 
             // Initiate using creditorIBAN directly (QR flow)
-            PaymentRequest payReq = new PaymentRequest(payerIban, RETAIL_IBAN, null, amount, "QR pay");
+            String qrRef = UUID.randomUUID().toString();
+            PaymentRequest payReq = new PaymentRequest(payerIban, RETAIL_IBAN, null, amount, qrRef, "QR pay");
             PaymentInitiatedResponse initiated = rest.postForObject(
                     "/bank/pay", payReq, PaymentInitiatedResponse.class);
 
@@ -350,7 +353,7 @@ class BankFlowIT {
                     new BigDecimal("100.00"), BigDecimal.ZERO);
 
             PaymentRequest payReq = new PaymentRequest(iban, null, BOB_ALIAS,
-                    new BigDecimal("10.00"), "pin test");
+                    new BigDecimal("10.00"), null, "pin test");
             PaymentInitiatedResponse initiated = rest.postForObject(
                     "/bank/pay", payReq, PaymentInitiatedResponse.class);
 
@@ -377,7 +380,7 @@ class BankFlowIT {
                     new BigDecimal("5.00"), BigDecimal.ZERO);
 
             PaymentRequest payReq = new PaymentRequest(iban, null, BOB_ALIAS,
-                    new BigDecimal("1000.00"), "too much");
+                    new BigDecimal("1000.00"), null, "too much");
             PaymentInitiatedResponse initiated = rest.postForObject(
                     "/bank/pay", payReq, PaymentInitiatedResponse.class);
 
@@ -392,7 +395,7 @@ class BankFlowIT {
         @DisplayName("Zero amount returns 400")
         void zeroAmount_returns400() {
             PaymentRequest payReq = new PaymentRequest(
-                    ALICE_IBAN, null, BOB_ALIAS, BigDecimal.ZERO, null);
+                    ALICE_IBAN, null, BOB_ALIAS, BigDecimal.ZERO, null, null);
             ResponseEntity<String> response = rest.postForEntity("/bank/pay", payReq, String.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -403,7 +406,7 @@ class BankFlowIT {
         void unknownDebtor_returns404() {
             PaymentRequest payReq = new PaymentRequest(
                     "DE00000000000000000000", null, BOB_ALIAS,
-                    new BigDecimal("10.00"), null);
+                    new BigDecimal("10.00"), null, null);
             ResponseEntity<String> response = rest.postForEntity("/bank/pay", payReq, String.class);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -418,7 +421,7 @@ class BankFlowIT {
 
             // First payment — succeeds
             PaymentRequest payReq = new PaymentRequest(iban, null, BOB_ALIAS,
-                    new BigDecimal("10.00"), "first");
+                    new BigDecimal("10.00"), null, "first");
             PaymentInitiatedResponse first = rest.postForObject(
                     "/bank/pay", payReq, PaymentInitiatedResponse.class);
             rest.postForObject("/bank/sca",
@@ -442,12 +445,12 @@ class BankFlowIT {
     // -------------------------------------------------------------------------
 
     @Nested
-    @DisplayName("Digital Euro waterfall")
-    class WaterfallTests {
+    @DisplayName("Digital Euro wallet isolation")
+    class DeWalletTests {
 
         @Test
-        @DisplayName("DE balance covers full amount — bank balance unchanged")
-        void deCoversAll_bankUntouched() {
+        @DisplayName("A2A payment does not touch DE wallet — bank balance debited only")
+        void a2aPayment_deWalletUntouched() {
             String alias = "+49840" + System.nanoTime() % 1_000_000;
             String iban = registerConsumer("DE Rich", alias,
                     new BigDecimal("1000.00"), new BigDecimal("100.00"));
@@ -456,38 +459,31 @@ class BankFlowIT {
 
             AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
             WalletView wallet = rest.getForObject("/bank/wallet/{id}", WalletView.class, account.walletId());
-            assertThat(wallet.balance()).isEqualByComparingTo("50.00");   // 100 - 50
-            assertThat(account.bankBalance()).isEqualByComparingTo("1000.00"); // unchanged
+            assertThat(wallet.balance()).isEqualByComparingTo("100.00");      // DE untouched
+            assertThat(account.bankBalance()).isEqualByComparingTo("950.00"); // 1000 - 50
         }
 
         @Test
-        @DisplayName("DE balance partially covers — remainder taken from bank balance")
-        void dePartialCover_bankDebited() {
+        @DisplayName("Insufficient bank balance rejects even when DE wallet has funds")
+        void insufficientBank_rjctEvenWithDeWallet() {
             String alias = "+49841" + System.nanoTime() % 1_000_000;
-            String iban = registerConsumer("DE Partial", alias,
-                    new BigDecimal("200.00"), new BigDecimal("10.00"));
+            String iban = registerConsumer("Poor Bank Rich DE", alias,
+                    new BigDecimal("10.00"), new BigDecimal("500.00"));
 
-            pay(iban, BOB_ALIAS, "30.00"); // DE=10 covers 10, bank covers 20
+            PaymentRequest payReq = new PaymentRequest(iban, null, BOB_ALIAS,
+                    new BigDecimal("50.00"), null, "should fail");
+            PaymentInitiatedResponse initiated = rest.postForObject(
+                    "/bank/pay", payReq, PaymentInitiatedResponse.class);
+            PaymentResult result = rest.postForObject("/bank/sca",
+                    new ScaRequest(initiated.uetr(), null, "1234"), PaymentResult.class);
 
+            assertThat(result.status()).isEqualTo(TransactionStatus.RJCT);
+            assertThat(result.rejectReason()).isEqualTo("AM04");
+
+            // DE wallet untouched after rejection
             AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
             WalletView wallet = rest.getForObject("/bank/wallet/{id}", WalletView.class, account.walletId());
-            assertThat(wallet.balance()).isEqualByComparingTo("0.00");
-            assertThat(account.bankBalance()).isEqualByComparingTo("180.00"); // 200 - 20
-        }
-
-        @Test
-        @DisplayName("No DE balance — entire amount debited from bank balance")
-        void noDeBalance_bankDebited() {
-            String alias = "+49842" + System.nanoTime() % 1_000_000;
-            String iban = registerConsumer("No DE", alias,
-                    new BigDecimal("300.00"), BigDecimal.ZERO);
-
-            pay(iban, BOB_ALIAS, "75.00");
-
-            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
-            WalletView wallet = rest.getForObject("/bank/wallet/{id}", WalletView.class, account.walletId());
-            assertThat(wallet.balance()).isEqualByComparingTo("0.00"); // started at zero
-            assertThat(account.bankBalance()).isEqualByComparingTo("225.00");
+            assertThat(wallet.balance()).isEqualByComparingTo("500.00");
         }
     }
 
@@ -542,6 +538,107 @@ class BankFlowIT {
     }
 
     // -------------------------------------------------------------------------
+    // DE wallet top-up and redeem
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("DE wallet top-up and redeem")
+    class WalletTransferTests {
+
+        @Test
+        @DisplayName("Top-up moves funds from bank to DE wallet")
+        void topUp_movesFromBankToWallet() {
+            String alias = "+49860" + System.nanoTime() % 1_000_000;
+            String iban = registerConsumer("TopUp User", alias,
+                    new BigDecimal("500.00"), new BigDecimal("10.00"));
+
+            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
+            UUID walletId = account.walletId();
+
+            WalletTransferResponse resp = rest.postForObject(
+                    "/bank/wallet/{id}/topup", new WalletTransferRequest(new BigDecimal("100.00")),
+                    WalletTransferResponse.class, walletId);
+
+            assertThat(resp).isNotNull();
+            assertThat(resp.walletBalance()).isEqualByComparingTo("110.00"); // 10 + 100
+            assertThat(resp.bankBalance()).isEqualByComparingTo("400.00");   // 500 - 100
+        }
+
+        @Test
+        @DisplayName("Redeem moves funds from DE wallet to bank")
+        void redeem_movesFromWalletToBank() {
+            String alias = "+49861" + System.nanoTime() % 1_000_000;
+            String iban = registerConsumer("Redeem User", alias,
+                    new BigDecimal("200.00"), new BigDecimal("80.00"));
+
+            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
+            UUID walletId = account.walletId();
+
+            WalletTransferResponse resp = rest.postForObject(
+                    "/bank/wallet/{id}/redeem", new WalletTransferRequest(new BigDecimal("50.00")),
+                    WalletTransferResponse.class, walletId);
+
+            assertThat(resp).isNotNull();
+            assertThat(resp.walletBalance()).isEqualByComparingTo("30.00");  // 80 - 50
+            assertThat(resp.bankBalance()).isEqualByComparingTo("250.00");   // 200 + 50
+        }
+
+        @Test
+        @DisplayName("Top-up with insufficient bank balance returns 422")
+        void topUp_insufficientBank_returns422() {
+            String alias = "+49862" + System.nanoTime() % 1_000_000;
+            String iban = registerConsumer("Broke TopUp", alias,
+                    new BigDecimal("20.00"), BigDecimal.ZERO);
+
+            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
+
+            ResponseEntity<String> resp = rest.postForEntity(
+                    "/bank/wallet/{id}/topup", new WalletTransferRequest(new BigDecimal("100.00")),
+                    String.class, account.walletId());
+
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        @DisplayName("Redeem with insufficient DE balance returns 400")
+        void redeem_insufficientWallet_returns400() {
+            String alias = "+49863" + System.nanoTime() % 1_000_000;
+            String iban = registerConsumer("Empty Wallet", alias,
+                    new BigDecimal("500.00"), new BigDecimal("5.00"));
+
+            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
+
+            ResponseEntity<String> resp = rest.postForEntity(
+                    "/bank/wallet/{id}/redeem", new WalletTransferRequest(new BigDecimal("100.00")),
+                    String.class, account.walletId());
+
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
+        @Test
+        @DisplayName("Top-up then redeem returns to original balances")
+        void topUpThenRedeem_balancesRestored() {
+            String alias = "+49864" + System.nanoTime() % 1_000_000;
+            String iban = registerConsumer("Round Trip", alias,
+                    new BigDecimal("300.00"), new BigDecimal("20.00"));
+
+            AccountView account = rest.getForObject("/bank/accounts/{iban}", AccountView.class, iban);
+            UUID walletId = account.walletId();
+            BigDecimal amount = new BigDecimal("75.00");
+
+            rest.postForObject("/bank/wallet/{id}/topup",
+                    new WalletTransferRequest(amount), WalletTransferResponse.class, walletId);
+
+            WalletTransferResponse afterRedeem = rest.postForObject(
+                    "/bank/wallet/{id}/redeem", new WalletTransferRequest(amount),
+                    WalletTransferResponse.class, walletId);
+
+            assertThat(afterRedeem.walletBalance()).isEqualByComparingTo("20.00");  // restored
+            assertThat(afterRedeem.bankBalance()).isEqualByComparingTo("300.00");   // restored
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -563,7 +660,7 @@ class BankFlowIT {
     /** Convenience: initiate + confirm a payment, assert ACSC. */
     private PaymentResult pay(String debtorIban, String creditorAlias, String amount) {
         PaymentRequest payReq = new PaymentRequest(
-                debtorIban, null, creditorAlias, new BigDecimal(amount), "test");
+                debtorIban, null, creditorAlias, new BigDecimal(amount), null, "test");
         PaymentInitiatedResponse initiated = rest.postForObject(
                 "/bank/pay", payReq, PaymentInitiatedResponse.class);
         assertThat(initiated).isNotNull();

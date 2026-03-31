@@ -11,6 +11,8 @@ import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
+import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
+import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.fips.FipsClient;
 import eu.accesa.blinkpay.bank.fips.FipsRejectedException;
@@ -22,6 +24,8 @@ import eu.accesa.blinkpay.bank.model.RtpStatus;
 import eu.accesa.blinkpay.bank.model.Transaction;
 import eu.accesa.blinkpay.bank.model.TransactionStatus;
 import eu.accesa.blinkpay.bank.model.VopResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -45,6 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class BankService {
 
+    private static final Logger log = LoggerFactory.getLogger(BankService.class);
     private static final String CORRECT_PIN = "1234";
 
     private final AccountStore accounts;
@@ -92,6 +97,11 @@ public class BankService {
                     ? req.digitalEuroBalance() : BigDecimal.ZERO;
             walletId = wallets.create(acc.getIban(), initialWallet).getWalletId();
         }
+
+        log.info("[REGISTER] {} | {} | IBAN={} alias={} bank=€{} de=€{}",
+                acc.getAccountType(), acc.getHolderName(), acc.getIban(),
+                acc.getPhoneAlias(), acc.getBankBalance(),
+                walletId != null ? req.digitalEuroBalance() : "n/a");
 
         return new RegisterResponse(acc.getIban(), acc.getHolderName(), acc.getAccountType(),
                 acc.getPhoneAlias(), acc.getBankBalance(), walletId);
@@ -149,6 +159,60 @@ public class BankService {
     }
 
     // -------------------------------------------------------------------------
+    // Digital Euro wallet — top-up and redeem
+    // -------------------------------------------------------------------------
+
+    /**
+     * Top-up: move funds from the owner's bank account into their DE custody wallet.
+     * Used to pre-load the wallet before an offline NFC payment.
+     */
+    public WalletTransferResponse topUpWallet(UUID walletId, WalletTransferRequest req) {
+        if (req.amount() == null || req.amount().signum() <= 0)
+            throw new ValidationException("Amount must be positive");
+
+        DigitalEuroWallet wallet = wallets.findByWalletId(walletId)
+                .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        Account account = accounts.findByIban(wallet.getOwnerIban())
+                .orElseThrow(() -> new NotFoundException("Account not found: " + wallet.getOwnerIban()));
+
+        account.debit(req.amount());   // throws InsufficientFundsException if short
+        wallet.credit(req.amount());
+
+        log.info("[WALLET] TOP-UP | walletId={} | bank -€{} → de +€{} | newBank=€{} newDe=€{}",
+                walletId, req.amount(), req.amount(), account.getBankBalance(), wallet.getBalance());
+
+        return new WalletTransferResponse(wallet.getWalletId(), wallet.getOwnerIban(),
+                wallet.getBalance(), account.getBankBalance());
+    }
+
+    /**
+     * Redeem: move funds from the DE custody wallet back into the owner's bank account.
+     * Used to convert unused DE balance back to commercial bank money.
+     */
+    public WalletTransferResponse redeemWallet(UUID walletId, WalletTransferRequest req) {
+        if (req.amount() == null || req.amount().signum() <= 0)
+            throw new ValidationException("Amount must be positive");
+
+        DigitalEuroWallet wallet = wallets.findByWalletId(walletId)
+                .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        Account account = accounts.findByIban(wallet.getOwnerIban())
+                .orElseThrow(() -> new NotFoundException("Account not found: " + wallet.getOwnerIban()));
+
+        if (wallet.getBalance().compareTo(req.amount()) < 0)
+            throw new ValidationException("Insufficient DE wallet balance: have €"
+                    + wallet.getBalance() + ", need €" + req.amount());
+
+        wallet.debit(req.amount());
+        account.credit(req.amount());
+
+        log.info("[WALLET] REDEEM | walletId={} | de -€{} → bank +€{} | newBank=€{} newDe=€{}",
+                walletId, req.amount(), req.amount(), account.getBankBalance(), wallet.getBalance());
+
+        return new WalletTransferResponse(wallet.getWalletId(), wallet.getOwnerIban(),
+                wallet.getBalance(), account.getBankBalance());
+    }
+
+    // -------------------------------------------------------------------------
     // Payment flow — step 1: initiate (returns SCA challenge)
     // -------------------------------------------------------------------------
 
@@ -182,7 +246,10 @@ public class BankService {
         pendingPayments.put(uetr.toString(), new PendingPayment(
                 uetr, debtor.getIban(), creditorIBAN,
                 debtor.getHolderName(), creditorName,
-                req.amount(), req.remittanceInfo()));
+                req.amount(), req.creditorReference(), req.remittanceInfo()));
+
+        log.info("[PAY] INITIATED | uetr={} | {}→{} | €{} | ref={}",
+                uetr, debtor.getIban(), creditorIBAN, req.amount(), req.creditorReference());
 
         return new PaymentInitiatedResponse(uetr, uetr.toString(), creditorName, creditorIBAN, req.amount());
     }
@@ -193,16 +260,19 @@ public class BankService {
 
     public PaymentResult confirmPayment(ScaRequest sca) {
         if (!CORRECT_PIN.equals(sca.pin())) {
+            log.warn("[SCA] WRONG_PIN | uetr={} rtpId={}", sca.uetr(), sca.rtpId());
             throw new ValidationException("Invalid PIN");
         }
 
         // RTP path (Flow B2)
         if (sca.rtpId() != null) {
+            log.info("[SCA] CONFIRMED | rtpId={}", sca.rtpId());
             return confirmRtp(sca.rtpId());
         }
 
         // Direct payment path (Flow A, B1)
         if (sca.uetr() == null) throw new ValidationException("uetr is required for direct payment SCA");
+        log.info("[SCA] CONFIRMED | uetr={}", sca.uetr());
         PendingPayment pending = Optional.ofNullable(
                         pendingPayments.remove(sca.uetr().toString()))
                 .orElseThrow(() -> new NotFoundException("No pending payment for UETR: " + sca.uetr()));
@@ -249,61 +319,56 @@ public class BankService {
         Account debtor   = accounts.findByIban(p.debtorIBAN()).orElseThrow();
         Account creditor = accounts.findByIban(p.creditorIBAN()).orElseThrow();
 
-        // --- Balance check (wallet + bank combined) ---------------------------
-        Optional<DigitalEuroWallet> wallet = wallets.findByOwnerIban(p.debtorIBAN());
-        BigDecimal deBalance   = wallet.map(DigitalEuroWallet::getBalance).orElse(BigDecimal.ZERO);
-        BigDecimal totalFunds  = debtor.getBankBalance().add(deBalance);
+        BigDecimal deBalance = wallets.findByOwnerIban(p.debtorIBAN())
+                .map(DigitalEuroWallet::getBalance).orElse(BigDecimal.ZERO);
 
-        if (totalFunds.compareTo(p.amount()) < 0) {
+        log.info("[SETTLE] BEGIN | uetr={} | €{} | bank=€{} de=€{}",
+                p.uetr(), p.amount(), debtor.getBankBalance(), deBalance);
+
+        // A2A: instant payments debit bank balance only.
+        // The DE wallet is a separate custody balance managed via dedicated top-up/redeem flows.
+        if (debtor.getBankBalance().compareTo(p.amount()) < 0) {
+            log.warn("[SETTLE] RJCT AM04 | uetr={} | need=€{} have=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
-                    p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
+                    p.debtorName(), p.creditorName(), p.amount(),
+                    p.creditorReference(), p.remittanceInfo());
             debtor.addTransaction(rejected);
+            sse.notifyRejection(p.creditorReference(), rejected);
             return new PaymentResult(p.uetr(), TransactionStatus.RJCT, "AM04");
         }
 
-        // --- Waterfall: DE wallet first, bank account for any shortfall -------
-        BigDecimal bankDebited   = BigDecimal.ZERO;
-        BigDecimal walletDebited = BigDecimal.ZERO;
-
-        BigDecimal remaining = p.amount();
-        if (wallet.isPresent() && deBalance.compareTo(BigDecimal.ZERO) > 0) {
-            remaining    = wallet.get().debit(remaining);
-            walletDebited = p.amount().subtract(remaining);
-        }
-        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
-            debtor.debit(remaining);
-            bankDebited = remaining;
-        }
+        debtor.debit(p.amount());
+        log.info("[SETTLE] DEBIT | uetr={} | bank -€{} → remaining=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
 
         // --- FIPS submission --------------------------------------------------
-        final BigDecimal finalWalletDebited = walletDebited;
-        final BigDecimal finalBankDebited   = bankDebited;
+        log.info("[SETTLE] FIPS→ | uetr={} | pacs.008 submitted to FIPS", p.uetr());
         try {
             fips.submit(p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(),
                     p.debtorName(), p.creditorName(), "E2E-" + p.uetr(), p.remittanceInfo());
         } catch (FipsRejectedException e) {
-            // Roll back exactly what was debited
-            if (finalBankDebited.compareTo(BigDecimal.ZERO) > 0) {
-                debtor.credit(finalBankDebited);
-            }
-            if (wallet.isPresent() && finalWalletDebited.compareTo(BigDecimal.ZERO) > 0) {
-                wallet.get().credit(finalWalletDebited);
-            }
+            log.warn("[SETTLE] FIPS RJCT {} | uetr={} | rolling back bank +€{}", e.getRejectCode(), p.uetr(), p.amount());
+            debtor.credit(p.amount());
 
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
-                    p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
+                    p.debtorName(), p.creditorName(), p.amount(),
+                    p.creditorReference(), p.remittanceInfo());
             debtor.addTransaction(rejected);
             creditor.addTransaction(rejected);
+            sse.notifyRejection(p.creditorReference(), rejected);
             return new PaymentResult(p.uetr(), TransactionStatus.RJCT, e.getRejectCode());
         }
 
         creditor.credit(p.amount());
         Transaction settled = Transaction.settled(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
-                p.debtorName(), p.creditorName(), p.amount(), p.remittanceInfo());
+                p.debtorName(), p.creditorName(), p.amount(),
+                p.creditorReference(), p.remittanceInfo());
         debtor.addTransaction(settled);
         creditor.addTransaction(settled);
 
-        sse.notifySettlement(p.creditorIBAN(), settled);
+        log.info("[SETTLE] ACSC | uetr={} | {}→{} €{} | ref={}",
+                p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(), p.creditorReference());
+
+        sse.notifySettlement(p.creditorReference(), settled);
 
         return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
     }
@@ -315,15 +380,18 @@ public class BankService {
             throw new ValidationException("RTP is not in PENDING state: " + rtp.getStatus());
         }
         rtp.setStatus(RtpStatus.ACCEPTED);
+        log.info("[RTP] ACCEPTED | rtpId={} | {}→{} €{}",
+                rtpId, rtp.getDebtorIBAN(), rtp.getCreditorIBAN(), rtp.getAmount());
 
         PendingPayment p = new PendingPayment(UUID.randomUUID(),
                 rtp.getDebtorIBAN(), rtp.getCreditorIBAN(),
                 accounts.findByIban(rtp.getDebtorIBAN()).map(Account::getHolderName).orElse("Unknown"),
-                rtp.getCreditorName(), rtp.getAmount(), rtp.getRemittanceInfo());
+                rtp.getCreditorName(), rtp.getAmount(), null, rtp.getRemittanceInfo());
 
         PaymentResult result = settle(p);
         rtp.setStatus(result.status() == TransactionStatus.ACSC ? RtpStatus.SETTLED : RtpStatus.REJECTED);
         rtp.setPaymentUetr(p.uetr());
+        log.info("[RTP] {} | rtpId={} uetr={}", rtp.getStatus(), rtpId, p.uetr());
         return result;
     }
 
@@ -360,5 +428,5 @@ public class BankService {
     // Pending payment context while awaiting SCA
     record PendingPayment(UUID uetr, String debtorIBAN, String creditorIBAN,
                           String debtorName, String creditorName,
-                          BigDecimal amount, String remittanceInfo) {}
+                          BigDecimal amount, String creditorReference, String remittanceInfo) {}
 }

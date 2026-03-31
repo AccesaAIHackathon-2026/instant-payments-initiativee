@@ -3,8 +3,9 @@ import { v4 as uuid } from 'uuid';
 import { AmountInput } from './AmountInput';
 import { QRCodeDisplay } from './QRCodeDisplay';
 import { PaymentSuccess } from './PaymentSuccess';
+import { PaymentFailed } from './PaymentFailed';
 import { useSSE } from './useSSE';
-import type { AppScreen, PaymentRequest, PaymentResult } from './types';
+import type { AppScreen, PaymentRequest, PaymentResult, PaymentRejected } from './types';
 import './App.css';
 
 const CREDITOR_IBAN = 'DE89370400440532013099';
@@ -15,15 +16,22 @@ function App() {
   const [screen, setScreen] = useState<AppScreen>('input');
   const [payment, setPayment] = useState<PaymentRequest | null>(null);
   const [result, setResult] = useState<PaymentResult | null>(null);
+  const [rejected, setRejected] = useState<PaymentRejected | null>(null);
 
   const handlePaymentConfirmed = useCallback((res: PaymentResult) => {
     setResult(res);
     setScreen('success');
   }, []);
 
+  const handlePaymentRejected = useCallback((rej: PaymentRejected) => {
+    setRejected(rej);
+    setScreen('failed');
+  }, []);
+
   const sseStatus = useSSE(
-    screen === 'qr' ? payment?.reference ?? null : null,
+    screen === 'qr' ? (payment?.reference ?? null) : null,
     handlePaymentConfirmed,
+    handlePaymentRejected,
   );
 
   const handleAmountSubmit = (amount: number) => {
@@ -41,6 +49,7 @@ function App() {
   const handleCancel = () => {
     setPayment(null);
     setResult(null);
+    setRejected(null);
     setScreen('input');
   };
 
@@ -68,6 +77,9 @@ function App() {
       )}
       {screen === 'success' && result && (
         <PaymentSuccess result={result} onReset={handleCancel} />
+      )}
+      {screen === 'failed' && rejected && (
+        <PaymentFailed rejected={rejected} onReset={handleCancel} />
       )}
     </div>
   );

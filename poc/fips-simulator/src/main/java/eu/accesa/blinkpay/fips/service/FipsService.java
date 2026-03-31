@@ -11,6 +11,8 @@ import com.prowidesoftware.swift.model.mx.dic.StatusReasonInformation12;
 import eu.accesa.blinkpay.fips.model.Transaction;
 import eu.accesa.blinkpay.fips.model.TransactionStatus;
 import eu.accesa.blinkpay.fips.model.TransactionView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -43,6 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class FipsService {
 
+    private static final Logger log = LoggerFactory.getLogger(FipsService.class);
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("100000.00");
     private static final int MAX_PAGE_SIZE = 500;
 
@@ -69,8 +72,12 @@ public class FipsService {
         String debtorName   = txInfo.getDbtr() != null ? txInfo.getDbtr().getNm() : null;
         String creditorName = txInfo.getCdtr() != null ? txInfo.getCdtr().getNm() : null;
 
+        log.info("[FIPS] pacs.008 RCVD | uetr={} | {}→{} €{} {}",
+                uetrStr, debtorIBAN, creditorIBAN, amount, currency);
+
         String rejectCode = validate(uetrStr, debtorIBAN, creditorIBAN, amount, currency);
         if (rejectCode != null) {
+            log.warn("[FIPS] pacs.002 RJCT {} | uetr={}", rejectCode, uetrStr);
             UUID uetr = uetrStr != null ? parseUUID(uetrStr) : UUID.randomUUID();
             Transaction rejected = new Transaction(uetr, debtorIBAN, creditorIBAN, amount, currency,
                     debtorName, creditorName, endToEndId, null);
@@ -86,11 +93,14 @@ public class FipsService {
         store.put(uetr, tx);
 
         // Simulate instant settlement: RCVD → ACSP → ACSC
+        log.info("[FIPS] RCVD→ACSP | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSP);
+        log.info("[FIPS] ACSP→ACSC | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSC);
         Instant settledAt = Instant.now();
         tx.setSettledAt(settledAt);
 
+        log.info("[FIPS] pacs.002 ACSC | uetr={} | settledAt={}", uetr, settledAt);
         return buildPacs002(uetrStr, endToEndId, TransactionStatus.ACSC, settledAt, null);
     }
 

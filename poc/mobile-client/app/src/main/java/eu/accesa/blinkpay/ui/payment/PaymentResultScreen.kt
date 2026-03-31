@@ -21,6 +21,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
+private fun humanReadableReason(reason: String?): String = when (reason) {
+    "AM04" -> "Insufficient funds"
+    "AC01" -> "Invalid creditor account"
+    "AG01" -> "Payment blocked by receiving bank"
+    "AG02" -> "Invalid payment reference"
+    "FOCR" -> "Payment returned by creditor"
+    "NARR" -> "Payment rejected — no reason given"
+    null   -> "Payment rejected"
+    else   -> reason
+}
+
 @Composable
 fun PaymentResultScreen(
     success: Boolean,
@@ -69,9 +80,9 @@ fun PaymentResultScreen(
                 )
             }
 
-            if (!success && reason != null) {
+            if (!success) {
                 Text(
-                    text = reason,
+                    text = humanReadableReason(reason),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,

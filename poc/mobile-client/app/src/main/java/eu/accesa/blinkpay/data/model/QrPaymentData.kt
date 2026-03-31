@@ -10,7 +10,8 @@ data class QrPaymentData(
     val creditorIban: String,
     val amount: BigDecimal,
     val currency: String,
-    val reference: String,
+    val creditorReference: String?,  // ISO 11649 structured reference from QR line 9; null for P2P
+    val reference: String,           // unstructured remittance info from QR line 10
 )
 
 /**
@@ -44,6 +45,7 @@ fun parseEpcQr(raw: String): QrPaymentData? {
     val currency = amountLine.substring(0, 3)
     val amount = amountLine.substring(3).toBigDecimalOrNull() ?: return null
 
+    val creditorReference = lines.getOrElse(9) { "" }.ifBlank { null }
     val reference = lines.getOrElse(10) { "" }
 
     return QrPaymentData(
@@ -51,6 +53,7 @@ fun parseEpcQr(raw: String): QrPaymentData? {
         creditorIban = creditorIban,
         amount = amount,
         currency = currency,
+        creditorReference = creditorReference,
         reference = reference,
     )
 }

@@ -11,6 +11,8 @@ import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
+import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
+import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.model.Transaction;
 import eu.accesa.blinkpay.bank.service.BankService;
@@ -50,11 +52,13 @@ public class BankController {
     /**
      * SSE stream — retailer subscribes when the QR code is displayed.
      * Receives a "settlement" event the moment Alice's payment clears.
-     * React usage: new EventSource('/bank/payment-events/{iban}')
+     * Keyed by the ISO 11649 creditor reference from QR line 9, scoping each
+     * stream to a single payment session.
+     * React usage: new EventSource('/bank/payment-events/{creditorReference}')
      */
-    @GetMapping(value = "/payment-events/{iban}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter paymentEvents(@PathVariable String iban) {
-        return sse.subscribe(iban);
+    @GetMapping(value = "/payment-events/{creditorReference}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter paymentEvents(@PathVariable String creditorReference) {
+        return sse.subscribe(creditorReference);
     }
 
     /** Proxy lookup: phone/email → IBAN + name */
@@ -77,8 +81,28 @@ public class BankController {
 
     /** Digital Euro custody wallet — balance and owner */
     @GetMapping("/wallet/{walletId}")
-    public WalletView wallet(@PathVariable java.util.UUID walletId) {
+    public WalletView wallet(@PathVariable UUID walletId) {
         return bankService.getWallet(walletId);
+    }
+
+    /**
+     * Top-up: move funds from the bank account into the DE wallet.
+     * Used to pre-load the wallet before an offline NFC payment.
+     */
+    @PostMapping("/wallet/{walletId}/topup")
+    public WalletTransferResponse topUp(@PathVariable UUID walletId,
+                                        @RequestBody WalletTransferRequest request) {
+        return bankService.topUpWallet(walletId, request);
+    }
+
+    /**
+     * Redeem: move funds from the DE wallet back into the bank account.
+     * Used to convert unused DE balance back to commercial bank money.
+     */
+    @PostMapping("/wallet/{walletId}/redeem")
+    public WalletTransferResponse redeem(@PathVariable UUID walletId,
+                                         @RequestBody WalletTransferRequest request) {
+        return bankService.redeemWallet(walletId, request);
     }
 
     /** Transaction history for settlement polling (retailer polls this in Flow B1) */

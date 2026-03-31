@@ -11,6 +11,8 @@ import com.prowidesoftware.swift.model.mx.dic.GroupHeader93;
 import com.prowidesoftware.swift.model.mx.dic.PartyIdentification135;
 import com.prowidesoftware.swift.model.mx.dic.PaymentIdentification7;
 import com.prowidesoftware.swift.model.mx.dic.PaymentTransaction110;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -32,6 +34,8 @@ import java.util.UUID;
 @Component
 public class FipsClient {
 
+    private static final Logger log = LoggerFactory.getLogger(FipsClient.class);
+
     private final RestClient restClient;
 
     public FipsClient(RestClient fipsRestClient) {
@@ -50,6 +54,8 @@ public class FipsClient {
         MxPacs00800108 pacs008 = buildPacs008(uetr, debtorIBAN, creditorIBAN,
                 amount, debtorName, creditorName, endToEndId);
 
+        log.info("[FIPS←] pacs.008 | uetr={} | {}→{} €{}", uetr, debtorIBAN, creditorIBAN, amount);
+
         MxPacs00200110 pacs002 = restClient.post()
                 .uri("/fips/submit")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -58,15 +64,21 @@ public class FipsClient {
                 .onStatus(HttpStatusCode::isError, (req, res) -> { /* parse body regardless */ })
                 .body(MxPacs00200110.class);
 
-        if (pacs002 == null) throw new FipsRejectedException(uetr, "NO_RESPONSE");
+        if (pacs002 == null) {
+            log.error("[FIPS→] NO_RESPONSE | uetr={}", uetr);
+            throw new FipsRejectedException(uetr, "NO_RESPONSE");
+        }
 
         PaymentTransaction110 txInfo = pacs002.getFIToFIPmtStsRpt()
                 .getTxInfAndSts().getFirst();
 
         if ("RJCT".equals(txInfo.getTxSts())) {
             String code = extractRejectCode(txInfo);
+            log.warn("[FIPS→] pacs.002 RJCT {} | uetr={}", code, uetr);
             throw new FipsRejectedException(uetr, code);
         }
+
+        log.info("[FIPS→] pacs.002 ACSC | uetr={}", uetr);
     }
 
     // -------------------------------------------------------------------------

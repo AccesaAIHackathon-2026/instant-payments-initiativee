@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { PaymentResult } from './types';
+import type { PaymentRejected, PaymentResult } from './types';
 
 const SSE_BASE_URL = 'http://localhost:8080/bank/payment-events';
 const API_KEY = import.meta.env.VITE_BANK_API_KEY as string;
@@ -11,12 +11,15 @@ export type SseStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | '
 export function useSSE(
   reference: string | null,
   onPaymentConfirmed: (result: PaymentResult) => void,
+  onPaymentRejected?: (rejected: PaymentRejected) => void,
 ): SseStatus {
   const [status, setStatus] = useState<SseStatus>('idle');
   const sourceRef = useRef<EventSource | null>(null);
   const retriesRef = useRef(0);
   const callbackRef = useRef(onPaymentConfirmed);
   callbackRef.current = onPaymentConfirmed;
+  const rejectedRef = useRef(onPaymentRejected);
+  rejectedRef.current = onPaymentRejected;
 
   const connect = useCallback((ref: string) => {
     setStatus('connecting');
@@ -28,14 +31,27 @@ export function useSSE(
       retriesRef.current = 0;
     };
 
-    source.addEventListener('PAYMENT_CONFIRMED', (event) => {
+    source.addEventListener('settlement', (event) => {
       try {
         const data = JSON.parse(event.data);
         callbackRef.current({
           amount: data.amount,
           currency: data.currency ?? 'EUR',
-          reference: data.reference,
-          timestamp: data.timestamp,
+          reference: data.uetr,
+          timestamp: data.settledAt ?? new Date().toISOString(),
+        });
+      } catch {
+        // ignore malformed messages
+      }
+    });
+
+    source.addEventListener('rejection', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        rejectedRef.current?.({
+          amount: data.amount,
+          currency: data.currency ?? 'EUR',
+          rejectReason: data.rejectReason ?? 'RJCT',
         });
       } catch {
         // ignore malformed messages

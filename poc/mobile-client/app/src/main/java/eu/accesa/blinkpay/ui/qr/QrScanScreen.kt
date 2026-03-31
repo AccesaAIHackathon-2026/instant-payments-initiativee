@@ -1,6 +1,7 @@
 package eu.accesa.blinkpay.ui.qr
 
 import android.util.Log
+import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
@@ -14,6 +15,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import eu.accesa.blinkpay.BuildConfig
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -85,6 +95,33 @@ fun QrScanScreen(
             color = MaterialTheme.colorScheme.onSurface,
         )
 
+        // Debug paste panel — only visible in debug builds
+        if (BuildConfig.DEBUG) {
+            var pasteText by rememberSaveable { mutableStateOf("") }
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                    .padding(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = pasteText,
+                    onValueChange = { pasteText = it },
+                    placeholder = { Text("Paste QR content", style = MaterialTheme.typography.bodySmall) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(
+                    onClick = { if (pasteText.isNotBlank()) viewModel.onQrDetected(pasteText) },
+                ) { Text("Go", style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+
         // Error toast
         if (error != null) {
             Text(
@@ -131,6 +168,7 @@ private fun CameraPreviewWithAnalysis(onBarcodeDetected: (String) -> Unit) {
                 }
 
                 val imageAnalysis = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also { analysis ->

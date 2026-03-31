@@ -14,8 +14,8 @@ function toEpcQr(p: PaymentRequest): string {
     p.creditorIban,                           // Beneficiary IBAN
     `${p.currency}${p.amount.toFixed(2)}`,    // Amount (e.g. "EUR25.00")
     '',                                       // Purpose code (optional)
-    '',                                       // Structured remittance ref (optional)
-    p.reference,                              // Unstructured remittance info (max 140)
+    p.reference,                              // Structured creditor reference (ISO 11649, QR line 9)
+    '',                                       // Unstructured remittance info (max 140)
   ].join('\n');
 }
 
@@ -28,6 +28,18 @@ interface Props {
 
 export function QRCodeDisplay({ payment, wsStatus, onCancel, onSimulate }: Props) {
   const qrValue = toEpcQr(payment);
+
+  const handleCopyQr = () => {
+    navigator.clipboard.writeText(qrValue).catch(() => {
+      // Fallback: select a hidden textarea
+      const el = document.createElement('textarea');
+      el.value = qrValue;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    });
+  };
 
   return (
     <div className="card">
@@ -59,6 +71,9 @@ export function QRCodeDisplay({ payment, wsStatus, onCancel, onSimulate }: Props
 
       <div className="button-row">
         <button className="btn-secondary" onClick={onCancel}>Cancel</button>
+        <button className="btn-secondary" onClick={handleCopyQr} title={qrValue}>
+          Copy QR
+        </button>
         {import.meta.env.DEV && (
           <button className="btn-simulate" onClick={onSimulate}>
             Simulate Payment

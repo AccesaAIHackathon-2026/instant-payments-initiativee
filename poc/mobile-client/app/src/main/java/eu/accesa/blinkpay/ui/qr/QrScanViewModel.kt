@@ -30,4 +30,5 @@ class QrScanViewModel : ViewModel() {
     fun clearError() {
         _error.value = null
     }
+
 }
