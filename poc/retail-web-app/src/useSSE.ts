@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { PaymentResult } from './types';
 
-const SSE_BASE_URL = 'http://localhost:8080/api/payments/sse';
+const SSE_BASE_URL = 'http://localhost:8080/bank/payment-events';
+const API_KEY = import.meta.env.VITE_BANK_API_KEY as string;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
 
@@ -19,7 +20,7 @@ export function useSSE(
 
   const connect = useCallback((ref: string) => {
     setStatus('connecting');
-    const source = new EventSource(`${SSE_BASE_URL}/${ref}`);
+    const source = new EventSource(`${SSE_BASE_URL}/${ref}?apiKey=${encodeURIComponent(API_KEY)}`);
     sourceRef.current = source;
 
     source.onopen = () => {

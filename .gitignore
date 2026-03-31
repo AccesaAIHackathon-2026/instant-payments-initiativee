@@ -35,3 +35,7 @@ target/
 
 # Claude Code session data
 .claude/
+
+# Environment files — never commit secrets; copy .env.example → .env
+.env
+.env.local

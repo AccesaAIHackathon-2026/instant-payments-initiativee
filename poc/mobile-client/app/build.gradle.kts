@@ -3,6 +3,21 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// Load poc/.env so the API key is never hardcoded in the repo.
+// rootDir = poc/mobile-client, so poc/.env is one level up.
+fun loadDotEnv(): Map<String, String> {
+    val envFile = rootDir.parentFile.resolve(".env")
+    if (!envFile.exists()) return emptyMap()
+    return envFile.readLines()
+        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+        .associate { line ->
+            val idx = line.indexOf('=')
+            line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+        }
+}
+
+val env = loadDotEnv()
+
 android {
     namespace = "eu.accesa.blinkpay"
     compileSdk = 36
@@ -16,7 +31,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "BANK_API_BASE_URL", "\"http://10.210.155.229:8080\"")
+        buildConfigField("String", "BANK_API_BASE_URL", "\"${env["BANK_API_BASE_URL"] ?: error("BANK_API_BASE_URL not set in poc/.env")}\"")
+        buildConfigField("String", "BANK_API_KEY", "\"${env["BANK_API_KEY"] ?: error("BANK_API_KEY not set in poc/.env")}\"")
     }
 
     buildTypes {

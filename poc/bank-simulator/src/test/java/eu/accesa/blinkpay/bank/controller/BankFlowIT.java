@@ -19,7 +19,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * up to 90 s for the health endpoint to become available.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BankFlowIT {
 
     // Pre-seeded accounts (see AccountStore)
@@ -61,12 +64,23 @@ class BankFlowIT {
     @Autowired
     private TestRestTemplate rest;
 
+    @Value("${bank.api-key}")
+    private String apiKey;
+
     // -------------------------------------------------------------------------
     // FIPS lifecycle
     // -------------------------------------------------------------------------
 
     @BeforeAll
-    static void ensureFipsRunning() throws Exception {
+    void configureApiKey() {
+        rest.getRestTemplate().getInterceptors().add((request, body, execution) -> {
+            request.getHeaders().set("X-Api-Key", apiKey);
+            return execution.execute(request, body);
+        });
+    }
+
+    @BeforeAll
+    void ensureFipsRunning() throws Exception {
         if (isFipsUp()) return;
 
         // Resolve fips-simulator directory relative to bank-simulator working dir
@@ -90,7 +104,7 @@ class BankFlowIT {
     }
 
     @AfterAll
-    static void stopFipsIfStarted() {
+    void stopFipsIfStarted() {
         if (fipsProcess != null) {
             fipsProcess.destroy();
             fipsProcess = null;
