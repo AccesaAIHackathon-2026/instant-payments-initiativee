@@ -1,7 +1,7 @@
 package eu.accesa.blinkpay.data.api.dto
 
-data class ScaResponse(
+data class PaymentResult(
     val uetr: String,
     val status: String,
-    val settledAt: String? = null,
+    val rejectReason: String? = null,
 )

@@ -1,5 +1,6 @@
 package eu.accesa.blinkpay.data.api
 
+import eu.accesa.blinkpay.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -8,7 +9,7 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    private const val BASE_URL = "http://10.0.2.2:8080"
+    private val BASE_URL = BuildConfig.BANK_API_BASE_URL
 
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {

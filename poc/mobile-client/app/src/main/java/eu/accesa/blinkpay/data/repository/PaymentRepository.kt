@@ -1,35 +1,30 @@
 package eu.accesa.blinkpay.data.repository
 
 import eu.accesa.blinkpay.data.api.ApiClient
+import eu.accesa.blinkpay.data.api.dto.PaymentInitiatedResponse
 import eu.accesa.blinkpay.data.api.dto.PaymentRequest
-import eu.accesa.blinkpay.data.api.dto.PaymentResponse
+import eu.accesa.blinkpay.data.api.dto.PaymentResult
 import eu.accesa.blinkpay.data.api.dto.ScaRequest
-import eu.accesa.blinkpay.data.api.dto.ScaResponse
 import eu.accesa.blinkpay.data.model.QrPaymentData
 
 class PaymentRepository {
 
     companion object {
-        // Hardcoded debtor for POC — Alice's IBAN
         const val ALICE_IBAN = "DE89370400440532013001"
     }
 
-    suspend fun initiatePayment(qrData: QrPaymentData): PaymentResponse {
+    suspend fun initiatePayment(qrData: QrPaymentData): PaymentInitiatedResponse {
         val request = PaymentRequest(
             debtorIBAN = ALICE_IBAN,
             creditorIBAN = qrData.creditorIban,
             amount = qrData.amount,
-            currency = qrData.currency,
-            reference = qrData.reference,
+            remittanceInfo = qrData.reference,
         )
         return ApiClient.bankApi.initiatePayment(request)
     }
 
-    suspend fun confirmSca(uetr: String, challengeToken: String): ScaResponse {
-        val request = ScaRequest(
-            uetr = uetr,
-            scaChallengeToken = challengeToken,
-        )
+    suspend fun confirmSca(uetr: String): PaymentResult {
+        val request = ScaRequest(uetr = uetr)
         return ApiClient.bankApi.confirmSca(request)
     }
 }

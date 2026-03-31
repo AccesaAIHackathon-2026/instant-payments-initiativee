@@ -15,7 +15,7 @@ sealed class PaymentState {
     data object Idle : PaymentState()
     data object Authenticating : PaymentState()
     data object Processing : PaymentState()
-    data class Success(val uetr: String, val status: String) : PaymentState()
+    data class Success(val uetr: String) : PaymentState()
     data class Failed(val message: String) : PaymentState()
 }
 
@@ -39,7 +39,7 @@ class PaymentViewModel : ViewModel() {
                     subtitle = "Verify to pay €${"%.2f".format(qrData.amount)} to ${qrData.creditorName}",
                 )
             } else {
-                // PIN fallback is handled by the UI — if we reach here, PIN was already verified
+                // PIN fallback handled by UI — if we reach here, PIN was already verified
                 true
             }
 
@@ -48,31 +48,7 @@ class PaymentViewModel : ViewModel() {
                 return@launch
             }
 
-            _state.value = PaymentState.Processing
-
-            try {
-                val paymentResponse = repository.initiatePayment(qrData)
-
-                if (paymentResponse.scaChallengeToken != null) {
-                    val scaResponse = repository.confirmSca(
-                        uetr = paymentResponse.uetr,
-                        challengeToken = paymentResponse.scaChallengeToken,
-                    )
-                    _state.value = PaymentState.Success(
-                        uetr = scaResponse.uetr,
-                        status = scaResponse.status,
-                    )
-                } else {
-                    _state.value = PaymentState.Success(
-                        uetr = paymentResponse.uetr,
-                        status = paymentResponse.status,
-                    )
-                }
-            } catch (e: Exception) {
-                _state.value = PaymentState.Failed(
-                    e.message ?: "Payment failed. Please try again."
-                )
-            }
+            executePayment(qrData)
         }
     }
 
@@ -80,32 +56,33 @@ class PaymentViewModel : ViewModel() {
         if (pin != "1234") return false
 
         viewModelScope.launch {
-            _state.value = PaymentState.Processing
-            try {
-                val paymentResponse = repository.initiatePayment(qrData)
-
-                if (paymentResponse.scaChallengeToken != null) {
-                    val scaResponse = repository.confirmSca(
-                        uetr = paymentResponse.uetr,
-                        challengeToken = paymentResponse.scaChallengeToken,
-                    )
-                    _state.value = PaymentState.Success(
-                        uetr = scaResponse.uetr,
-                        status = scaResponse.status,
-                    )
-                } else {
-                    _state.value = PaymentState.Success(
-                        uetr = paymentResponse.uetr,
-                        status = paymentResponse.status,
-                    )
-                }
-            } catch (e: Exception) {
-                _state.value = PaymentState.Failed(
-                    e.message ?: "Payment failed. Please try again."
-                )
-            }
+            executePayment(qrData)
         }
         return true
+    }
+
+    private suspend fun executePayment(qrData: QrPaymentData) {
+        _state.value = PaymentState.Processing
+
+        try {
+            // Step 1: Initiate payment — POST /bank/pay
+            val initiated = repository.initiatePayment(qrData)
+
+            // Step 2: Confirm SCA — POST /bank/sca with uetr + pin "1234"
+            val result = repository.confirmSca(uetr = initiated.uetr)
+
+            // Step 3: Check result
+            if (result.status == "ACSC") {
+                _state.value = PaymentState.Success(uetr = result.uetr)
+            } else {
+                val reason = result.rejectReason ?: "Unknown"
+                _state.value = PaymentState.Failed("Payment rejected: $reason")
+            }
+        } catch (e: Exception) {
+            _state.value = PaymentState.Failed(
+                e.message ?: "Payment failed. Please try again."
+            )
+        }
     }
 
     fun reset() {
