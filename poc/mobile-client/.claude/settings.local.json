@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls:*)",
+      "Bash(find /c/Users/petru.scurtu/instant-payments-initiativee/poc/bank-simulator/src -type f -name *.java -o -name *.kt)",
+      "Bash(./gradlew assembleDebug)"
+    ]
+  }
+}
