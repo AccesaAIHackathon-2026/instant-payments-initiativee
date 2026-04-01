@@ -12,6 +12,10 @@ import eu.accesa.blinkpay.data.model.QrPaymentData
 import eu.accesa.blinkpay.ui.account.AccountScreen
 import eu.accesa.blinkpay.ui.home.HomeScreen
 import eu.accesa.blinkpay.ui.lock.BiometricLockScreen
+import eu.accesa.blinkpay.ui.nfc.NfcReceiveScreen
+import eu.accesa.blinkpay.ui.nfc.NfcReceiveViewModel
+import eu.accesa.blinkpay.ui.nfc.NfcSendScreen
+import eu.accesa.blinkpay.ui.nfc.NfcSendViewModel
 import eu.accesa.blinkpay.ui.payment.PaymentConfirmScreen
 import eu.accesa.blinkpay.ui.payment.PaymentResultScreen
 import eu.accesa.blinkpay.ui.payment.PaymentViewModel
@@ -25,6 +29,8 @@ object Routes {
     const val HOME = "home"
     const val QR_SCAN = "qr_scan"
     const val ACCOUNT = "account"
+    const val NFC_SEND = "nfc_send"
+    const val NFC_RECEIVE = "nfc_receive"
 
     // Payment confirm route with encoded QR data as arguments
     const val PAYMENT_CONFIRM =
@@ -65,6 +71,8 @@ fun BlinkPayNavGraph(navController: NavHostController) {
             HomeScreen(
                 onScanAndPay = { navController.navigate(Routes.QR_SCAN) },
                 onAccount = { navController.navigate(Routes.ACCOUNT) },
+                onNfcSend = { navController.navigate(Routes.NFC_SEND) },
+                onNfcReceive = { navController.navigate(Routes.NFC_RECEIVE) },
             )
         }
 
@@ -141,6 +149,24 @@ fun BlinkPayNavGraph(navController: NavHostController) {
                 onDone = {
                     navController.popBackStack(Routes.HOME, false)
                 },
+            )
+        }
+
+        composable(Routes.NFC_SEND) {
+            val nfcSendViewModel: NfcSendViewModel = viewModel()
+            NfcSendScreen(
+                viewModel = nfcSendViewModel,
+                onDone = { navController.popBackStack(Routes.HOME, false) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.NFC_RECEIVE) {
+            val nfcReceiveViewModel: NfcReceiveViewModel = viewModel()
+            NfcReceiveScreen(
+                viewModel = nfcReceiveViewModel,
+                onDone = { navController.popBackStack(Routes.HOME, false) },
+                onBack = { navController.popBackStack() },
             )
         }
     }
