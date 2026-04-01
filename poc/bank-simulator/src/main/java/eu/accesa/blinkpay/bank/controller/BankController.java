@@ -18,6 +18,7 @@ import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
 import eu.accesa.blinkpay.bank.model.Transaction;
 import eu.accesa.blinkpay.bank.service.BankService;
+import eu.accesa.blinkpay.bank.service.FlowEventService;
 import eu.accesa.blinkpay.bank.service.SseNotificationService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,10 +40,12 @@ public class BankController {
 
     private final BankService bankService;
     private final SseNotificationService sse;
+    private final FlowEventService flowEvents;
 
-    public BankController(BankService bankService, SseNotificationService sse) {
+    public BankController(BankService bankService, SseNotificationService sse, FlowEventService flowEvents) {
         this.bankService = bankService;
         this.sse = sse;
+        this.flowEvents = flowEvents;
     }
 
     /** Register a new consumer or merchant account. */
@@ -61,6 +64,12 @@ public class BankController {
     @GetMapping(value = "/payment-events/{creditorReference}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter paymentEvents(@PathVariable String creditorReference) {
         return sse.subscribe(creditorReference);
+    }
+
+    /** SSE stream for the flow visualizer — broadcasts all payment flow events. */
+    @GetMapping(value = "/flow-events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter flowEvents() {
+        return flowEvents.subscribe();
     }
 
     /** Proxy lookup: phone/email → IBAN + name */

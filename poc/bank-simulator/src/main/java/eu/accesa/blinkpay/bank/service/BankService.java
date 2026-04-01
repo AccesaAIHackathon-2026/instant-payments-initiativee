@@ -66,6 +66,7 @@ public class BankService {
     private final WalletStore wallets;
     private final FipsClient fips;
     private final SseNotificationService sse;
+    private final FlowEventService flowEvents;
     private final String ibanPrefix;
 
     // Pending payments awaiting SCA confirmation: uetr → PendingPayment context
@@ -76,11 +77,13 @@ public class BankService {
 
     public BankService(AccountStore accounts, WalletStore wallets,
                        FipsClient fips, SseNotificationService sse,
+                       FlowEventService flowEvents,
                        @Value("${bank.iban-prefix}") String ibanPrefix) {
         this.accounts   = accounts;
         this.wallets    = wallets;
         this.fips       = fips;
         this.sse        = sse;
+        this.flowEvents = flowEvents;
         this.ibanPrefix = ibanPrefix;
     }
 
@@ -264,6 +267,13 @@ public class BankService {
         log.info("[PAY] INITIATED | uetr={} | {}→{} | €{} | ref={}",
                 uetr, debtor.getIban(), creditorIBAN, req.amount(), req.creditorReference());
 
+        flowEvents.emit("PAY_INITIATED",
+                "mobile-" + debtor.getHolderName(), flowEvents.getBankId(),
+                "mobile", "bank", uetr, debtor.getHolderName(),
+                debtor.getHolderName(), debtor.getIban(), creditorName, creditorIBAN,
+                req.amount(), "PENDING",
+                "Payment initiated: " + debtor.getHolderName() + " → " + creditorName + " €" + req.amount());
+
         return new PaymentInitiatedResponse(uetr, uetr.toString(), creditorName, creditorIBAN, req.amount());
     }
 
@@ -286,6 +296,19 @@ public class BankService {
         // Direct payment path (Flow A, B1)
         if (sca.uetr() == null) throw new ValidationException("uetr is required for direct payment SCA");
         log.info("[SCA] CONFIRMED | uetr={}", sca.uetr());
+
+        {
+            PendingPayment pp = pendingPayments.get(sca.uetr().toString());
+            if (pp != null) {
+                flowEvents.emit("SCA_CONFIRMED",
+                        "mobile-" + pp.debtorName(), flowEvents.getBankId(),
+                        "mobile", "bank", sca.uetr(), pp.debtorName(),
+                        pp.debtorName(), pp.debtorIBAN(), pp.creditorName(), pp.creditorIBAN(),
+                        pp.amount(), "PENDING",
+                        "SCA confirmed (PIN verified) for €" + pp.amount());
+            }
+        }
+
         PendingPayment pending = Optional.ofNullable(
                         pendingPayments.remove(sca.uetr().toString()))
                 .orElseThrow(() -> new NotFoundException("No pending payment for UETR: " + sca.uetr()));
@@ -342,6 +365,12 @@ public class BankService {
         // A2A: debit bank balance only — DE wallet is managed via top-up/redeem
         if (debtor.getBankBalance().compareTo(p.amount()) < 0) {
             log.warn("[SETTLE] RJCT AM04 | uetr={} | need=€{} have=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
+            flowEvents.emit("SETTLE_REJECTED",
+                    flowEvents.getBankId(), "mobile-" + p.debtorName(),
+                    "bank", "mobile", p.uetr(), p.debtorName(),
+                    p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                    p.amount(), "RJCT",
+                    "Rejected AM04: insufficient funds (need €" + p.amount() + ", have €" + debtor.getBankBalance() + ")");
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
                     p.debtorName(), p.creditorName(), p.amount(),
                     p.creditorReference(), p.remittanceInfo());
@@ -352,6 +381,12 @@ public class BankService {
 
         debtor.debit(p.amount());
         log.info("[SETTLE] DEBIT | uetr={} | bank -€{} → remaining=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
+        flowEvents.emit("SETTLE_DEBIT",
+                flowEvents.getBankId(), flowEvents.getBankId(),
+                "bank", "bank", p.uetr(), p.debtorName(),
+                p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                p.amount(), "PENDING",
+                "Debited €" + p.amount() + " from " + p.debtorName() + " (remaining: €" + debtor.getBankBalance() + ")");
 
         // --- Intra-bank: creditor is on this bank — settle directly, no FIPS --
         if (isIntraBank) {
@@ -366,12 +401,30 @@ public class BankService {
 
             log.info("[SETTLE] ACSC (intra) | uetr={} | {}→{} €{} | ref={}",
                     p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(), p.creditorReference());
+
+            // Determine creditor node type
+            String creditorNodeType = creditor.getAccountType() == AccountType.MERCHANT ? "retail" : "mobile";
+            String creditorNodeId = creditor.getAccountType() == AccountType.MERCHANT
+                    ? "retail-" + p.creditorName() : "mobile-" + p.creditorName();
+            flowEvents.emit("SETTLE_INTRA",
+                    flowEvents.getBankId(), creditorNodeId,
+                    "bank", creditorNodeType, p.uetr(), p.debtorName(),
+                    p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                    p.amount(), "ACSC",
+                    "Intra-bank settlement: credited €" + p.amount() + " to " + p.creditorName());
+
             sse.notifySettlement(p.creditorReference(), settled);
             return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
         }
 
         // --- Inter-bank: route through FIPS — FIPS forwards to destination bank
         log.info("[SETTLE] INTER-BANK | uetr={} | submitting pacs.008 to FIPS", p.uetr());
+        flowEvents.emit("FIPS_SUBMIT",
+                flowEvents.getBankId(), "fips",
+                "bank", "fips", p.uetr(), p.debtorName(),
+                p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                p.amount(), "PENDING",
+                "Submitting pacs.008 to FIPS for inter-bank routing");
         try {
             // Use creditorReference as endToEndId so bank-a can fire the SSE event on the correct key
             String endToEndId = p.creditorReference() != null ? p.creditorReference() : p.uetr().toString();
@@ -380,6 +433,12 @@ public class BankService {
         } catch (FipsRejectedException e) {
             log.warn("[SETTLE] FIPS RJCT {} | uetr={} | rolling back bank +€{}", e.getRejectCode(), p.uetr(), p.amount());
             debtor.credit(p.amount());
+            flowEvents.emit("SETTLE_REJECTED",
+                    flowEvents.getBankId(), "mobile-" + p.debtorName(),
+                    "bank", "mobile", p.uetr(), p.debtorName(),
+                    p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                    p.amount(), "RJCT",
+                    "FIPS rejected (" + e.getRejectCode() + "), funds rolled back");
 
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
                     p.debtorName(), p.creditorName(), p.amount(),
@@ -397,6 +456,12 @@ public class BankService {
 
         log.info("[SETTLE] ACSC (inter) | uetr={} | {}→{} €{} | ref={}",
                 p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(), p.creditorReference());
+        flowEvents.emit("SETTLE_COMPLETE",
+                flowEvents.getBankId(), "mobile-" + p.debtorName(),
+                "bank", "mobile", p.uetr(), p.debtorName(),
+                p.debtorName(), p.debtorIBAN(), p.creditorName(), p.creditorIBAN(),
+                p.amount(), "ACSC",
+                "Inter-bank settlement complete: €" + p.amount() + " " + p.debtorName() + " → " + p.creditorName());
         sse.notifySettlement(p.creditorReference(), settled);
 
         return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
@@ -505,6 +570,16 @@ public class BankService {
         creditor.addTransaction(settled);
 
         log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{} | ref={}", uetr, debtorIBAN, creditorIBAN, amount, creditorReference);
+
+        String creditorNodeType = creditor.getAccountType() == AccountType.MERCHANT ? "retail" : "mobile";
+        String creditorNodeId = creditor.getAccountType() == AccountType.MERCHANT
+                ? "retail-" + creditorName : "mobile-" + creditorName;
+        flowEvents.emit("RECEIVE_CREDIT",
+                flowEvents.getBankId(), creditorNodeId,
+                "bank", creditorNodeType, uetr, debtorName,
+                debtorName, debtorIBAN, creditorName, creditorIBAN,
+                amount, "ACSC",
+                "Inter-bank credit received: €" + amount + " credited to " + creditorName);
 
         sse.notifySettlement(creditorReference, settled);
 
