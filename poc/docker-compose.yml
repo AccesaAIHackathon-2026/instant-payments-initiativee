@@ -49,10 +49,13 @@ services:
       context: ./retail-web-app
       args:
         - BANK_API_KEY=${BANK_API_KEY:-blinkpay-poc-key}
+        - BANK_A_BASE_URL=${BANK_API_BASE_URL:-http://localhost:8080}
+        - BANK_B_BASE_URL=${BANK_B_API_BASE_URL:-http://localhost:8082}
     ports:
       - "3001:80"
     depends_on:
       - bank-a
+      - bank-b
 
   flow-visualizer:
     build:
