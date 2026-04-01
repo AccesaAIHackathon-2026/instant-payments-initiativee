@@ -12,6 +12,7 @@ body {
 }
 
 .app-container {
+  --retailer-accent: #2563eb;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -252,6 +253,17 @@ h1 {
   display: block;
 }
 
+/* Retailer / bank identifier shown on POS screen */
+.pos-bank-label {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--retailer-accent);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin: -8px 0 12px;
+}
+
 /* Centered amount label */
 .input-group--centered {
   text-align: center;
@@ -279,6 +291,7 @@ h1 {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  border-top: 4px solid var(--retailer-accent);
 }
 
 .pos-amount-display {
@@ -445,19 +458,19 @@ h1 {
 }
 
 .payment-method-btn--blinkpay {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--retailer-accent);
+  background: color-mix(in srgb, var(--retailer-accent) 8%, #fff);
 }
 
 .payment-method-btn--blinkpay:hover:not(:disabled) {
-  border-color: #1d4ed8;
-  background: #dbeafe;
+  border-color: var(--retailer-accent);
+  background: color-mix(in srgb, var(--retailer-accent) 16%, #fff);
 }
 
 .payment-method-btn--blinkpay:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  border-color: #93c5fd;
+  border-color: color-mix(in srgb, var(--retailer-accent) 50%, #fff);
 }
 
 .payment-method-logos {

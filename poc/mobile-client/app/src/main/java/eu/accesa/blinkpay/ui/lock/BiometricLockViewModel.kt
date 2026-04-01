@@ -1,6 +1,7 @@
 package eu.accesa.blinkpay.ui.lock
 
 import androidx.lifecycle.ViewModel
+import eu.accesa.blinkpay.BuildConfig
 import eu.accesa.blinkpay.data.api.ApiClient
 import eu.accesa.blinkpay.util.ServiceLocator
 import eu.accesa.blinkpay.util.UserSession
@@ -15,13 +16,15 @@ private data class UserProfile(
 )
 
 // Pre-seeded demo accounts — PIN selects which user the app operates as.
-// bank-a (8080): Alice, Bob, Retail Store GmbH  (IBAN prefix 013)
-// bank-b (8082): Charlie, Metro Market          (IBAN prefix 014)
-private val USER_PINS = mapOf(
-    "1111" to UserProfile("DE89370400440532013001", "Alice Consumer",   "+49111000001", "http://10.0.2.2:8080/"),
-    "2222" to UserProfile("DE89370400440532013002", "Bob Consumer",     "+49111000002", "http://10.0.2.2:8080/"),
-    "4444" to UserProfile("DE89370400440532014001", "Charlie Consumer", "+49222000001", "http://10.0.2.2:8082/"),
-)
+// bank-a (8080): Alice, Bob, MediaMarkt Saturn  (IBAN prefix 013)
+// bank-b (8082): Charlie, REWE Group            (IBAN prefix 014)
+private val USER_PINS by lazy {
+    mapOf(
+        "1111" to UserProfile("DE89370400440532013001", "Alice Consumer",   "+49111000001", BuildConfig.BANK_API_BASE_URL),
+        "2222" to UserProfile("DE89370400440532013002", "Bob Consumer",     "+49111000002", BuildConfig.BANK_API_BASE_URL),
+        "4444" to UserProfile("DE89370400440532014001", "Charlie Consumer", "+49222000001", BuildConfig.BANK_B_API_BASE_URL),
+    )
+}
 
 data class LockUiState(
     val pinInput: String = "",

@@ -32,6 +32,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "BANK_API_BASE_URL", "\"${env["BANK_API_BASE_URL"] ?: error("BANK_API_BASE_URL not set in poc/.env")}\"")
+        buildConfigField("String", "BANK_B_API_BASE_URL", "\"${env["BANK_B_API_BASE_URL"] ?: error("BANK_B_API_BASE_URL not set in poc/.env")}\"")
         buildConfigField("String", "BANK_API_KEY", "\"${env["BANK_API_KEY"] ?: error("BANK_API_KEY not set in poc/.env")}\"")
     }
 

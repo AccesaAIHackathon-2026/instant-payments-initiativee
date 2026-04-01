@@ -2,11 +2,12 @@ import { useState } from 'react';
 
 interface Props {
   onSubmit: (amount: number) => void;
+  bankLabel?: string;
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
-export function AmountInput({ onSubmit }: Props) {
+export function AmountInput({ onSubmit, bankLabel }: Props) {
   const [raw, setRaw] = useState('');
 
   const handleKey = (key: string) => {
@@ -34,6 +35,7 @@ export function AmountInput({ onSubmit }: Props) {
     <div className="pos-layout">
       <div className="pos-display card">
         <img src="/img/BlinkPay-logo.png" alt="BlinkPay" className="pos-logo" />
+        {bankLabel && <div className="pos-bank-label">{bankLabel}</div>}
         <form onSubmit={(e) => { e.preventDefault(); handleBlinkPay(); }}>
           <div className="input-group input-group--centered">
             <label htmlFor="amount" className="amount-label">Amount (EUR)</label>

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { PaymentRejected, PaymentResult } from './types';
 
-const SSE_BASE_URL = 'http://localhost:8080/bank/payment-events';
 const API_KEY = import.meta.env.VITE_BANK_API_KEY as string;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -10,6 +9,7 @@ export type SseStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | '
 
 export function useSSE(
   reference: string | null,
+  bankBaseUrl: string,
   onPaymentConfirmed: (result: PaymentResult) => void,
   onPaymentRejected?: (rejected: PaymentRejected) => void,
 ): SseStatus {
@@ -23,7 +23,7 @@ export function useSSE(
 
   const connect = useCallback((ref: string) => {
     setStatus('connecting');
-    const source = new EventSource(`${SSE_BASE_URL}/${ref}?apiKey=${encodeURIComponent(API_KEY)}`);
+    const source = new EventSource(`${bankBaseUrl}/bank/payment-events/${ref}?apiKey=${encodeURIComponent(API_KEY)}`);
     sourceRef.current = source;
 
     source.onopen = () => {
@@ -72,7 +72,7 @@ export function useSSE(
         setStatus('error');
       }
     };
-  }, []);
+  }, [bankBaseUrl]);
 
   useEffect(() => {
     if (!reference) {

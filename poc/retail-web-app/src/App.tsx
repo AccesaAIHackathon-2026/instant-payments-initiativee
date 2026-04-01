@@ -8,11 +8,17 @@ import { useSSE } from './useSSE';
 import type { AppScreen, PaymentRequest, PaymentResult, PaymentRejected } from './types';
 import './App.css';
 
-const CREDITOR_IBAN = 'DE89370400440532013099';
-const CREDITOR_NAME = 'Retail Store GmbH';
 const CURRENCY = 'EUR';
 
-function App() {
+export interface RetailerConfig {
+  bankBaseUrl: string;
+  creditorIban: string;
+  creditorName: string;
+  bankLabel: string;
+  accentColor: string;
+}
+
+function App({ config }: { config: RetailerConfig }) {
   const [screen, setScreen] = useState<AppScreen>('input');
   const [payment, setPayment] = useState<PaymentRequest | null>(null);
   const [result, setResult] = useState<PaymentResult | null>(null);
@@ -30,6 +36,7 @@ function App() {
 
   const sseStatus = useSSE(
     screen === 'qr' ? (payment?.reference ?? null) : null,
+    config.bankBaseUrl,
     handlePaymentConfirmed,
     handlePaymentRejected,
   );
@@ -37,8 +44,8 @@ function App() {
   const handleAmountSubmit = (amount: number) => {
     const ref = uuid();
     setPayment({
-      creditorIban: CREDITOR_IBAN,
-      creditorName: CREDITOR_NAME,
+      creditorIban: config.creditorIban,
+      creditorName: config.creditorName,
       amount,
       currency: CURRENCY,
       reference: ref,
@@ -65,8 +72,8 @@ function App() {
   };
 
   return (
-    <div className="app-container">
-      {screen === 'input' && <AmountInput onSubmit={handleAmountSubmit} />}
+    <div className="app-container" style={{ '--retailer-accent': config.accentColor } as React.CSSProperties}>
+      {screen === 'input' && <AmountInput onSubmit={handleAmountSubmit} bankLabel={config.bankLabel} />}
       {screen === 'qr' && payment && (
         <QRCodeDisplay
           payment={payment}
