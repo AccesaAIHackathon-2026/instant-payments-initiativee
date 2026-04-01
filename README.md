@@ -23,3 +23,8 @@ Build a compatible mobile payment solution supporting:
 - Digital Euro (when available)
 - P2P and consumer-to-merchant payments
 - Offline payments via NFC/secure elements
+
+
+Link with Deployed APK:
+
+https://accesa-my.sharepoint.com/:u:/g/personal/mihai_serban_accesa_eu/IQA6NOSS5gBgRrgPMPVjDZHeAXpEJS4W7F3HwwObulgacNM?e=WPzDRT
