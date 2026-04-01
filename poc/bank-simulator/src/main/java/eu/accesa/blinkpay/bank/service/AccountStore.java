@@ -38,13 +38,35 @@ public class AccountStore {
                         @Value("${bank.iban-prefix}") String ibanPrefix) {
         this.ibanPrefix = ibanPrefix;
         if ("bank-b".equals(bankId)) {
-            seed("001", "Charlie Consumer", "+49222000001", "800.00", AccountType.CONSUMER);
-            seed("099", "REWE Group",        null,             "0.00", AccountType.MERCHANT);
+            seed("001", "Charlie Consumer",  "+49222000001", "800.00", AccountType.CONSUMER);
+            seed("099", "REWE Group",         null,            "0.00", AccountType.MERCHANT);
+            // Audience accounts — bank-b (PINs 2001-2010)
+            seed("002", "Luca Rossi",         "+49222000002", "500.00", AccountType.CONSUMER);
+            seed("003", "Emma Laurent",       "+49222000003", "500.00", AccountType.CONSUMER);
+            seed("004", "Marco Bianchi",      "+49222000004", "500.00", AccountType.CONSUMER);
+            seed("005", "Sophie Dubois",      "+49222000005", "500.00", AccountType.CONSUMER);
+            seed("006", "Jan van der Berg",   "+49222000006", "500.00", AccountType.CONSUMER);
+            seed("007", "Elena Popescu",      "+49222000007", "500.00", AccountType.CONSUMER);
+            seed("008", "Carlos Garcia",      "+49222000008", "500.00", AccountType.CONSUMER);
+            seed("009", "Ingrid Johansson",   "+49222000009", "500.00", AccountType.CONSUMER);
+            seed("010", "Andrei Ionescu",     "+49222000010", "500.00", AccountType.CONSUMER);
+            seed("011", "Freya Nielsen",      "+49222000011", "500.00", AccountType.CONSUMER);
         } else {
             // bank-a (default)
             seed("001", "Alice Consumer",    "+49111000001", "1000.00", AccountType.CONSUMER);
             seed("002", "Bob Consumer",      "+49111000002",  "500.00", AccountType.CONSUMER);
             seed("099", "MediaMarkt Saturn",  null,              "0.00", AccountType.MERCHANT);
+            // Audience accounts — bank-a (PINs 1001-1010)
+            seed("003", "Hans Mueller",      "+49111000003", "500.00", AccountType.CONSUMER);
+            seed("004", "Maria Schmidt",     "+49111000004", "500.00", AccountType.CONSUMER);
+            seed("005", "Klaus Weber",       "+49111000005", "500.00", AccountType.CONSUMER);
+            seed("006", "Anna Fischer",      "+49111000006", "500.00", AccountType.CONSUMER);
+            seed("007", "Thomas Meyer",      "+49111000007", "500.00", AccountType.CONSUMER);
+            seed("008", "Laura Wagner",      "+49111000008", "500.00", AccountType.CONSUMER);
+            seed("009", "Stefan Becker",     "+49111000009", "500.00", AccountType.CONSUMER);
+            seed("010", "Julia Hoffmann",    "+49111000010", "500.00", AccountType.CONSUMER);
+            seed("011", "Michael Schulz",    "+49111000011", "500.00", AccountType.CONSUMER);
+            seed("012", "Sophie Koch",       "+49111000012", "500.00", AccountType.CONSUMER);
         }
     }
 
