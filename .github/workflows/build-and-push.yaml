@@ -1,0 +1,146 @@
+name: Build and Push Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "poc/fips-simulator/**"
+      - "poc/bank-simulator/**"
+      - "poc/retail-web-app/**"
+      - ".github/workflows/build-and-push.yaml"
+  workflow_dispatch:
+
+env:
+  ACR_REGISTRY: acrmanagementprod.azurecr.io
+  IMAGE_PREFIX: instant-payments
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      fips-simulator: ${{ steps.filter.outputs.fips-simulator }}
+      bank-simulator: ${{ steps.filter.outputs.bank-simulator }}
+      retail-web-app: ${{ steps.filter.outputs.retail-web-app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            fips-simulator:
+              - 'poc/fips-simulator/**'
+            bank-simulator:
+              - 'poc/bank-simulator/**'
+            retail-web-app:
+              - 'poc/retail-web-app/**'
+
+  build-fips-simulator:
+    name: Build fips-simulator
+    needs: changes
+    if: needs.changes.outputs.fips-simulator == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DHI registry
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name acrmanagementprod
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: poc/fips-simulator
+          push: true
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/fips-simulator:${{ github.sha }}
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/fips-simulator:latest
+
+  build-bank-simulator:
+    name: Build bank-simulator
+    needs: changes
+    if: needs.changes.outputs.bank-simulator == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DHI registry
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name acrmanagementprod
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: poc/bank-simulator
+          push: true
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/bank-simulator:${{ github.sha }}
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/bank-simulator:latest
+
+  build-retail-web-app:
+    name: Build retail-web-app
+    needs: changes
+    if: needs.changes.outputs.retail-web-app == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DHI registry
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name acrmanagementprod
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: poc/retail-web-app
+          push: true
+          build-args: |
+            BANK_API_KEY=${{ secrets.BANK_API_KEY }}
+            BANK_A_BASE_URL=https://instant-payments-api.134.149.74.195.sslip.io
+            BANK_B_BASE_URL=https://instant-payments-api.134.149.74.195.sslip.io
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/retail-web-app:${{ github.sha }}
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_PREFIX }}/retail-web-app:latest

@@ -1,0 +1,45 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: retail-web-app
+  namespace: instant-payments
+  labels:
+    app: retail-web-app
+    team: instant-payments
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: envoy-gateway-system
+  hostnames:
+    - "instant-payments.134.149.74.195.sslip.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: retail-web-app
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bank-simulator
+  namespace: instant-payments
+  labels:
+    app: bank-simulator
+    team: instant-payments
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: envoy-gateway-system
+  hostnames:
+    - "instant-payments-api.134.149.74.195.sslip.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: bank-simulator
+          port: 80
