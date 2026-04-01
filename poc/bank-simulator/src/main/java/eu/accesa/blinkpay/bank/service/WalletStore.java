@@ -28,9 +28,31 @@ public class WalletStore {
                        @Value("${bank.iban-prefix}") String ibanPrefix) {
         if ("bank-b".equals(bankId)) {
             seed(ibanPrefix + "001", "30.00");  // Charlie
+            // Audience accounts — bank-b
+            seed(ibanPrefix + "002", "20.00");  // Luca
+            seed(ibanPrefix + "003", "20.00");  // Emma
+            seed(ibanPrefix + "004", "20.00");  // Marco
+            seed(ibanPrefix + "005", "20.00");  // Sophie D
+            seed(ibanPrefix + "006", "20.00");  // Jan
+            seed(ibanPrefix + "007", "20.00");  // Elena
+            seed(ibanPrefix + "008", "20.00");  // Carlos
+            seed(ibanPrefix + "009", "20.00");  // Ingrid
+            seed(ibanPrefix + "010", "20.00");  // Andrei
+            seed(ibanPrefix + "011", "20.00");  // Freya
         } else {
             seed(ibanPrefix + "001", "50.00");  // Alice
             seed(ibanPrefix + "002", "20.00");  // Bob
+            // Audience accounts — bank-a
+            seed(ibanPrefix + "003", "20.00");  // Hans
+            seed(ibanPrefix + "004", "20.00");  // Maria
+            seed(ibanPrefix + "005", "20.00");  // Klaus
+            seed(ibanPrefix + "006", "20.00");  // Anna
+            seed(ibanPrefix + "007", "20.00");  // Thomas
+            seed(ibanPrefix + "008", "20.00");  // Laura
+            seed(ibanPrefix + "009", "20.00");  // Stefan
+            seed(ibanPrefix + "010", "20.00");  // Julia
+            seed(ibanPrefix + "011", "20.00");  // Michael
+            seed(ibanPrefix + "012", "20.00");  // Sophie K
         }
     }
 
