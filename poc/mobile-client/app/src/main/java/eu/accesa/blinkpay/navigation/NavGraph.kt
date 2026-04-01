@@ -11,6 +11,7 @@ import androidx.navigation.navArgument
 import eu.accesa.blinkpay.data.model.QrPaymentData
 import eu.accesa.blinkpay.ui.account.AccountScreen
 import eu.accesa.blinkpay.ui.home.HomeScreen
+import eu.accesa.blinkpay.ui.home.HomeViewModel
 import eu.accesa.blinkpay.ui.lock.BiometricLockScreen
 import eu.accesa.blinkpay.ui.nfc.NfcReceiveScreen
 import eu.accesa.blinkpay.ui.nfc.NfcReceiveViewModel
@@ -68,7 +69,9 @@ fun BlinkPayNavGraph(navController: NavHostController) {
         }
 
         composable(Routes.HOME) {
+            val homeViewModel: HomeViewModel = viewModel()
             HomeScreen(
+                viewModel = homeViewModel,
                 onScanAndPay = { navController.navigate(Routes.QR_SCAN) },
                 onAccount = { navController.navigate(Routes.ACCOUNT) },
                 onNfcSend = { navController.navigate(Routes.NFC_SEND) },
