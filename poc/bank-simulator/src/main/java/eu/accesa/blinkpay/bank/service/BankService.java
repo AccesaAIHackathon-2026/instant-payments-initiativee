@@ -73,6 +73,7 @@ public class BankService {
     private final SseNotificationService sse;
     private final FlowEventService flowEvents;
     private final String ibanPrefix;
+    private final BigDecimal interBankCommission;
 
     // Pending payments awaiting SCA confirmation: uetr → PendingPayment context
     private final Map<String, PendingPayment> pendingPayments = new ConcurrentHashMap<>();
@@ -86,13 +87,15 @@ public class BankService {
     public BankService(AccountStore accounts, WalletStore wallets,
                        FipsClient fips, SseNotificationService sse,
                        FlowEventService flowEvents,
-                       @Value("${bank.iban-prefix}") String ibanPrefix) {
-        this.accounts   = accounts;
-        this.wallets    = wallets;
-        this.fips       = fips;
-        this.sse        = sse;
-        this.flowEvents = flowEvents;
-        this.ibanPrefix = ibanPrefix;
+                       @Value("${bank.iban-prefix}") String ibanPrefix,
+                       @Value("${bank.inter-bank-commission:0.20}") BigDecimal interBankCommission) {
+        this.accounts            = accounts;
+        this.wallets             = wallets;
+        this.fips                = fips;
+        this.sse                 = sse;
+        this.flowEvents          = flowEvents;
+        this.ibanPrefix          = ibanPrefix;
+        this.interBankCommission = interBankCommission;
     }
 
     // -------------------------------------------------------------------------
@@ -640,17 +643,20 @@ public class BankService {
         Account creditor = accounts.findByIban(creditorIBAN)
                 .orElseThrow(() -> new NotFoundException("Creditor not found on this bank: " + creditorIBAN));
 
-        creditor.credit(amount);
+        // Inter-bank commission charged to the creditor (merchant). Intra-bank payments are free.
+        BigDecimal netAmount = amount.subtract(interBankCommission);
+        creditor.credit(netAmount);
         Instant now = Instant.now();
 
         // endToEndId carries the creditorReference set by the sending bank (see settle())
         String creditorReference = endToEndId;
 
         Transaction settled = Transaction.settled(uetr, debtorIBAN, creditorIBAN,
-                debtorName, creditorName, amount, creditorReference, null);
+                debtorName, creditorName, netAmount, creditorReference, null);
         creditor.addTransaction(settled);
 
-        log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{} | ref={}", uetr, debtorIBAN, creditorIBAN, amount, creditorReference);
+        log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{} (fee=€{} net=€{}) | ref={}",
+                uetr, debtorIBAN, creditorIBAN, amount, interBankCommission, netAmount, creditorReference);
 
         String creditorNodeType = creditor.getAccountType() == AccountType.MERCHANT ? "retail" : "mobile";
         String creditorNodeId = creditor.getAccountType() == AccountType.MERCHANT
@@ -660,7 +666,7 @@ public class BankService {
                 "bank", creditorNodeType, uetr, debtorName,
                 debtorName, debtorIBAN, creditorName, creditorIBAN,
                 amount, "ACSC",
-                "Inter-bank credit received: €" + amount + " credited to " + creditorName);
+                "Inter-bank credit: €" + amount + " gross, €" + interBankCommission + " fee, €" + netAmount + " net credited to " + creditorName);
 
         sse.notifySettlement(creditorReference, settled);
 

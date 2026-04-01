@@ -14,6 +14,7 @@ import eu.accesa.blinkpay.fips.model.TransactionStatus;
 import eu.accesa.blinkpay.fips.model.TransactionView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -57,15 +58,18 @@ public class FipsService {
     private final FlowEventService flowEvents;
     /** IBAN prefix → bank identifier (e.g. "bank-a") extracted from routing URL */
     private final Map<String, String> ibanToBankId;
+    private final long processingDelayMs;
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
     public FipsService(BankForwardingClient bankForwarder, FlowEventService flowEvents,
-                       BankRoutingProperties routingProps) {
+                       BankRoutingProperties routingProps,
+                       @Value("${fips.processing-delay-ms:2000}") long processingDelayMs) {
         this.bankForwarder = bankForwarder;
         this.flowEvents = flowEvents;
+        this.processingDelayMs = processingDelayMs;
         this.ibanToBankId = routingProps.getBanks().stream()
                 .collect(Collectors.toMap(
                         BankRoutingProperties.BankEntry::getPrefix,
@@ -151,7 +155,10 @@ public class FipsService {
                 amount, "ACSP",
                 "FIPS validated: RCVD → ACSP");
 
-        log.info("[FIPS] FORWARD→ | uetr={} | routing pacs.008 to destination bank", uetr);
+        // Simulate SCT Inst clearing window — real networks take 1–10s
+        try { Thread.sleep(processingDelayMs); } catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+
+        log.info("[FIPS] FORWARD→ | uetr={} | routing pacs.008 to destination bank after {}ms", uetr, processingDelayMs);
         flowEvents.emit("FIPS_FORWARD",
                 "fips", destBankId,
                 "fips", "bank", uetr, debtorName,
