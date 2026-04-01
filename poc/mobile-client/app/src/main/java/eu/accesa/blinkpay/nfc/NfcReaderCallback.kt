@@ -66,6 +66,9 @@ class NfcReaderCallback(
             NfcPayloadCodec.isSuccess(response)
         } catch (e: IOException) {
             false
+        } catch (e: SecurityException) {
+            // Tag handle expired (e.g. biometric prompt took focus)
+            false
         } finally {
             runCatching { iso.close() }
             isoDep = null

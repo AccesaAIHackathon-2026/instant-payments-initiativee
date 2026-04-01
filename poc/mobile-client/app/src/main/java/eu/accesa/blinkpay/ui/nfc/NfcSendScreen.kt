@@ -37,7 +37,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -45,9 +44,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import eu.accesa.blinkpay.biometric.BiometricHelper
-import androidx.fragment.app.FragmentActivity
-import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,7 +56,6 @@ fun NfcSendScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val activity = context as? Activity
-    val scope = rememberCoroutineScope()
 
     // Enable NFC reader mode while this screen is active
     DisposableEffect(Unit) {
@@ -115,21 +110,7 @@ fun NfcSendScreen(
                     receiverName = state.receiverName,
                     receiverIban = state.receiverIban,
                     onConfirm = {
-                        val fragmentActivity = activity as? FragmentActivity
-                        if (fragmentActivity != null) {
-                            scope.launch {
-                                val helper = BiometricHelper(fragmentActivity)
-                                val authenticated = helper.authenticateWithDeviceCredential(
-                                    title = "Confirm NFC Transfer",
-                                    subtitle = "€${state.amount.toPlainString()} to ${state.receiverName}",
-                                )
-                                if (authenticated) {
-                                    viewModel.onAuthenticationSuccess()
-                                } else {
-                                    viewModel.onAuthenticationFailed()
-                                }
-                            }
-                        }
+                        viewModel.onAuthenticationSuccess()
                     },
                     onCancel = {
                         viewModel.reset()
@@ -282,7 +263,7 @@ private fun ConfirmingContent(
             Text("Cancel")
         }
         Button(onClick = onConfirm) {
-            Text("Confirm & Authenticate")
+            Text("Confirm & Send")
         }
     }
 }
