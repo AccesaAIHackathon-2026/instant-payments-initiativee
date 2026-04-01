@@ -53,3 +53,13 @@ services:
       - "3001:80"
     depends_on:
       - bank-a
+
+  flow-visualizer:
+    build:
+      context: ./flow-visualizer
+    ports:
+      - "3002:80"
+    depends_on:
+      - bank-a
+      - bank-b
+      - fips-simulator

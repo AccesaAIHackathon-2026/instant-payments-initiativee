@@ -8,6 +8,7 @@ import com.prowidesoftware.swift.model.mx.dic.GroupHeader91;
 import com.prowidesoftware.swift.model.mx.dic.PaymentTransaction110;
 import com.prowidesoftware.swift.model.mx.dic.StatusReason6Choice;
 import com.prowidesoftware.swift.model.mx.dic.StatusReasonInformation12;
+import eu.accesa.blinkpay.fips.config.BankRoutingProperties;
 import eu.accesa.blinkpay.fips.model.Transaction;
 import eu.accesa.blinkpay.fips.model.TransactionStatus;
 import eu.accesa.blinkpay.fips.model.TransactionView;
@@ -21,9 +22,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Core FIPS settlement logic.
@@ -51,13 +54,37 @@ public class FipsService {
 
     private final ConcurrentHashMap<UUID, Transaction> store = new ConcurrentHashMap<>();
     private final BankForwardingClient bankForwarder;
+    private final FlowEventService flowEvents;
+    /** IBAN prefix → bank identifier (e.g. "bank-a") extracted from routing URL */
+    private final Map<String, String> ibanToBankId;
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
-    public FipsService(BankForwardingClient bankForwarder) {
+    public FipsService(BankForwardingClient bankForwarder, FlowEventService flowEvents,
+                       BankRoutingProperties routingProps) {
         this.bankForwarder = bankForwarder;
+        this.flowEvents = flowEvents;
+        this.ibanToBankId = routingProps.getBanks().stream()
+                .collect(Collectors.toMap(
+                        BankRoutingProperties.BankEntry::getPrefix,
+                        e -> {
+                            // Extract bank id from URL like "http://bank-a:8080" → "bank-a"
+                            String url = e.getUrl();
+                            String host = url.replaceFirst("https?://", "").split(":")[0];
+                            return host;
+                        }
+                ));
+    }
+
+    private String resolveBankId(String iban) {
+        if (iban == null) return "unknown";
+        return ibanToBankId.entrySet().stream()
+                .filter(e -> iban.startsWith(e.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse("unknown");
     }
 
     public MxPacs00200110 submit(MxPacs00800108 request) {
@@ -80,9 +107,26 @@ public class FipsService {
         log.info("[FIPS] pacs.008 RCVD | uetr={} | {}→{} €{} {}",
                 uetrStr, debtorIBAN, creditorIBAN, amount, currency);
 
+        String srcBankId = resolveBankId(debtorIBAN);
+        String destBankId = resolveBankId(creditorIBAN);
+        UUID uetrForEvent = uetrStr != null ? parseUUID(uetrStr) : null;
+
+        flowEvents.emit("FIPS_RECEIVED",
+                srcBankId, "fips",
+                "bank", "fips", uetrForEvent, debtorName,
+                debtorName, debtorIBAN, creditorName, creditorIBAN,
+                amount, "RCVD",
+                "FIPS received pacs.008: " + debtorName + " → " + creditorName + " €" + amount);
+
         String rejectCode = validate(uetrStr, debtorIBAN, creditorIBAN, amount, currency);
         if (rejectCode != null) {
             log.warn("[FIPS] pacs.002 RJCT {} | uetr={}", rejectCode, uetrStr);
+            flowEvents.emit("FIPS_REJECTED",
+                    "fips", srcBankId,
+                    "fips", "bank", uetrForEvent, debtorName,
+                    debtorName, debtorIBAN, creditorName, creditorIBAN,
+                    amount, "RJCT",
+                    "FIPS rejected: " + rejectCode);
             UUID uetr = uetrStr != null ? parseUUID(uetrStr) : UUID.randomUUID();
             Transaction rejected = new Transaction(uetr, debtorIBAN, creditorIBAN, amount, currency,
                     debtorName, creditorName, endToEndId, null);
@@ -100,8 +144,20 @@ public class FipsService {
         // SCT Inst flow: RCVD → ACSP → forward to destination bank → ACSC
         log.info("[FIPS] RCVD→ACSP | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSP);
+        flowEvents.emit("FIPS_VALIDATING",
+                "fips", "fips",
+                "fips", "fips", uetr, debtorName,
+                debtorName, debtorIBAN, creditorName, creditorIBAN,
+                amount, "ACSP",
+                "FIPS validated: RCVD → ACSP");
 
         log.info("[FIPS] FORWARD→ | uetr={} | routing pacs.008 to destination bank", uetr);
+        flowEvents.emit("FIPS_FORWARD",
+                "fips", destBankId,
+                "fips", "bank", uetr, debtorName,
+                debtorName, debtorIBAN, creditorName, creditorIBAN,
+                amount, "ACSP",
+                "FIPS forwarding pacs.008 to " + destBankId);
         try {
             bankForwarder.forward(creditorIBAN, request);
         } catch (Exception e) {
@@ -114,6 +170,12 @@ public class FipsService {
 
         log.info("[FIPS] ACSP→ACSC | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSC);
+        flowEvents.emit("FIPS_SETTLED",
+                "fips", srcBankId,
+                "fips", "bank", uetr, debtorName,
+                debtorName, debtorIBAN, creditorName, creditorIBAN,
+                amount, "ACSC",
+                "FIPS settled: ACSP → ACSC");
         Instant settledAt = Instant.now();
         tx.setSettledAt(settledAt);
 

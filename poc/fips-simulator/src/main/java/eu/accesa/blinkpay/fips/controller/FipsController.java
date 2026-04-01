@@ -4,7 +4,9 @@ import com.prowidesoftware.swift.model.mx.MxPacs00200110;
 import com.prowidesoftware.swift.model.mx.MxPacs00800108;
 import eu.accesa.blinkpay.fips.model.TransactionView;
 import eu.accesa.blinkpay.fips.service.FipsService;
+import eu.accesa.blinkpay.fips.service.FlowEventService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.UUID;
@@ -32,9 +35,17 @@ import java.util.UUID;
 public class FipsController {
 
     private final FipsService fipsService;
+    private final FlowEventService flowEvents;
 
-    public FipsController(FipsService fipsService) {
+    public FipsController(FipsService fipsService, FlowEventService flowEvents) {
         this.fipsService = fipsService;
+        this.flowEvents = flowEvents;
+    }
+
+    /** SSE stream for the flow visualizer — broadcasts all FIPS flow events. */
+    @GetMapping(value = "/flow-events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter flowEvents() {
+        return flowEvents.subscribe();
     }
 
     /**
