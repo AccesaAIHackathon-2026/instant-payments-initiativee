@@ -14,6 +14,12 @@ import eu.accesa.blinkpay.bank.dto.VopResponse;
 import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
 import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
+import com.prowidesoftware.swift.model.mx.MxPacs00200110;
+import com.prowidesoftware.swift.model.mx.MxPacs00800108;
+import com.prowidesoftware.swift.model.mx.dic.CreditTransferTransaction39;
+import com.prowidesoftware.swift.model.mx.dic.FIToFIPaymentStatusReportV10;
+import com.prowidesoftware.swift.model.mx.dic.GroupHeader91;
+import com.prowidesoftware.swift.model.mx.dic.PaymentTransaction110;
 import eu.accesa.blinkpay.bank.fips.FipsClient;
 import eu.accesa.blinkpay.bank.fips.FipsRejectedException;
 import eu.accesa.blinkpay.bank.model.Account;
@@ -26,9 +32,13 @@ import eu.accesa.blinkpay.bank.model.TransactionStatus;
 import eu.accesa.blinkpay.bank.model.VopResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +66,7 @@ public class BankService {
     private final WalletStore wallets;
     private final FipsClient fips;
     private final SseNotificationService sse;
+    private final String ibanPrefix;
 
     // Pending payments awaiting SCA confirmation: uetr → PendingPayment context
     private final Map<String, PendingPayment> pendingPayments = new ConcurrentHashMap<>();
@@ -64,11 +75,13 @@ public class BankService {
     private final Map<UUID, RequestToPay> rtpStore = new ConcurrentHashMap<>();
 
     public BankService(AccountStore accounts, WalletStore wallets,
-                       FipsClient fips, SseNotificationService sse) {
-        this.accounts = accounts;
-        this.wallets  = wallets;
-        this.fips     = fips;
-        this.sse      = sse;
+                       FipsClient fips, SseNotificationService sse,
+                       @Value("${bank.iban-prefix}") String ibanPrefix) {
+        this.accounts   = accounts;
+        this.wallets    = wallets;
+        this.fips       = fips;
+        this.sse        = sse;
+        this.ibanPrefix = ibanPrefix;
     }
 
     // -------------------------------------------------------------------------
@@ -316,17 +329,17 @@ public class BankService {
     // -------------------------------------------------------------------------
 
     private PaymentResult settle(PendingPayment p) {
-        Account debtor   = accounts.findByIban(p.debtorIBAN()).orElseThrow();
-        Account creditor = accounts.findByIban(p.creditorIBAN()).orElseThrow();
+        Account debtor = accounts.findByIban(p.debtorIBAN()).orElseThrow();
+        boolean isIntraBank = p.creditorIBAN().startsWith(ibanPrefix);
 
         BigDecimal deBalance = wallets.findByOwnerIban(p.debtorIBAN())
                 .map(DigitalEuroWallet::getBalance).orElse(BigDecimal.ZERO);
 
-        log.info("[SETTLE] BEGIN | uetr={} | €{} | bank=€{} de=€{}",
-                p.uetr(), p.amount(), debtor.getBankBalance(), deBalance);
+        log.info("[SETTLE] BEGIN | uetr={} | €{} | bank=€{} de=€{} | {}",
+                p.uetr(), p.amount(), debtor.getBankBalance(), deBalance,
+                isIntraBank ? "INTRA-BANK" : "INTER-BANK");
 
-        // A2A: instant payments debit bank balance only.
-        // The DE wallet is a separate custody balance managed via dedicated top-up/redeem flows.
+        // A2A: debit bank balance only — DE wallet is managed via top-up/redeem
         if (debtor.getBankBalance().compareTo(p.amount()) < 0) {
             log.warn("[SETTLE] RJCT AM04 | uetr={} | need=€{} have=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
             Transaction rejected = Transaction.rejected(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
@@ -340,8 +353,25 @@ public class BankService {
         debtor.debit(p.amount());
         log.info("[SETTLE] DEBIT | uetr={} | bank -€{} → remaining=€{}", p.uetr(), p.amount(), debtor.getBankBalance());
 
-        // --- FIPS submission --------------------------------------------------
-        log.info("[SETTLE] FIPS→ | uetr={} | pacs.008 submitted to FIPS", p.uetr());
+        // --- Intra-bank: creditor is on this bank — settle directly, no FIPS --
+        if (isIntraBank) {
+            Account creditor = accounts.findByIban(p.creditorIBAN()).orElseThrow();
+            creditor.credit(p.amount());
+
+            Transaction settled = Transaction.settled(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
+                    p.debtorName(), p.creditorName(), p.amount(),
+                    p.creditorReference(), p.remittanceInfo());
+            debtor.addTransaction(settled);
+            creditor.addTransaction(settled);
+
+            log.info("[SETTLE] ACSC (intra) | uetr={} | {}→{} €{} | ref={}",
+                    p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(), p.creditorReference());
+            sse.notifySettlement(p.creditorReference(), settled);
+            return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
+        }
+
+        // --- Inter-bank: route through FIPS — FIPS forwards to destination bank
+        log.info("[SETTLE] INTER-BANK | uetr={} | submitting pacs.008 to FIPS", p.uetr());
         try {
             fips.submit(p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(),
                     p.debtorName(), p.creditorName(), "E2E-" + p.uetr(), p.remittanceInfo());
@@ -353,21 +383,18 @@ public class BankService {
                     p.debtorName(), p.creditorName(), p.amount(),
                     p.creditorReference(), p.remittanceInfo());
             debtor.addTransaction(rejected);
-            creditor.addTransaction(rejected);
             sse.notifyRejection(p.creditorReference(), rejected);
             return new PaymentResult(p.uetr(), TransactionStatus.RJCT, e.getRejectCode());
         }
 
-        creditor.credit(p.amount());
+        // FIPS confirmed ACSC — record outgoing transaction on debtor's side
         Transaction settled = Transaction.settled(p.uetr(), p.debtorIBAN(), p.creditorIBAN(),
                 p.debtorName(), p.creditorName(), p.amount(),
                 p.creditorReference(), p.remittanceInfo());
         debtor.addTransaction(settled);
-        creditor.addTransaction(settled);
 
-        log.info("[SETTLE] ACSC | uetr={} | {}→{} €{} | ref={}",
+        log.info("[SETTLE] ACSC (inter) | uetr={} | {}→{} €{} | ref={}",
                 p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(), p.creditorReference());
-
         sse.notifySettlement(p.creditorReference(), settled);
 
         return new PaymentResult(p.uetr(), TransactionStatus.ACSC, null);
@@ -423,6 +450,58 @@ public class BankService {
     private RtpView toRtpView(RequestToPay rtp) {
         return new RtpView(rtp.getRtpId(), rtp.getCreditorIBAN(), rtp.getCreditorName(),
                 rtp.getAmount(), rtp.getRemittanceInfo(), rtp.getStatus(), rtp.getCreatedAt());
+    }
+
+    private MxPacs00200110 buildPacs002Acsc(String uetrStr, String endToEndId, Instant settledAt) {
+        GroupHeader91 grpHdr = new GroupHeader91()
+                .setMsgId(UUID.randomUUID().toString())
+                .setCreDtTm(OffsetDateTime.now(ZoneOffset.UTC));
+        PaymentTransaction110 txStatus = new PaymentTransaction110()
+                .setOrgnlUETR(uetrStr)
+                .setOrgnlEndToEndId(endToEndId)
+                .setTxSts(TransactionStatus.ACSC.name())
+                .setAccptncDtTm(OffsetDateTime.ofInstant(settledAt, ZoneOffset.UTC));
+        FIToFIPaymentStatusReportV10 report = new FIToFIPaymentStatusReportV10()
+                .setGrpHdr(grpHdr)
+                .addTxInfAndSts(txStatus);
+        return new MxPacs00200110().setFIToFIPmtStsRpt(report);
+    }
+
+    // -------------------------------------------------------------------------
+    // Incoming payment from FIPS (inter-bank credit leg)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Called by FIPS to credit the payee on this bank after inter-bank settlement.
+     * This is the receiving side of an SCT Inst: no SCA, no debit — only credit.
+     *
+     * @return pacs.002 ACSC confirming the credit was applied
+     */
+    public MxPacs00200110 receiveIncoming(MxPacs00800108 pacs008) {
+        CreditTransferTransaction39 txInfo = pacs008.getFIToFICstmrCdtTrf().getCdtTrfTxInf().get(0);
+
+        String uetrStr      = txInfo.getPmtId().getUETR();
+        String endToEndId   = txInfo.getPmtId().getEndToEndId();
+        String creditorIBAN = txInfo.getCdtrAcct().getId().getIBAN();
+        String debtorIBAN   = txInfo.getDbtrAcct().getId().getIBAN();
+        String debtorName   = txInfo.getDbtr() != null ? txInfo.getDbtr().getNm() : "Unknown";
+        String creditorName = txInfo.getCdtr() != null ? txInfo.getCdtr().getNm() : "Unknown";
+        BigDecimal amount   = txInfo.getIntrBkSttlmAmt().getValue();
+        UUID uetr           = UUID.fromString(uetrStr);
+
+        Account creditor = accounts.findByIban(creditorIBAN)
+                .orElseThrow(() -> new NotFoundException("Creditor not found on this bank: " + creditorIBAN));
+
+        creditor.credit(amount);
+        Instant now = Instant.now();
+
+        Transaction settled = Transaction.settled(uetr, debtorIBAN, creditorIBAN,
+                debtorName, creditorName, amount, null, null);
+        creditor.addTransaction(settled);
+
+        log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{}", uetr, debtorIBAN, creditorIBAN, amount);
+
+        return buildPacs002Acsc(uetrStr, endToEndId, now);
     }
 
     // Pending payment context while awaiting SCA

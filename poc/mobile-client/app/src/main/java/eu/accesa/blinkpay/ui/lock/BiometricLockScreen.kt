@@ -11,27 +11,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
-import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
@@ -40,15 +35,6 @@ fun BiometricLockScreen(
     viewModel: BiometricLockViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val activity = LocalContext.current as FragmentActivity
-
-    // Initialize and attempt biometric on first composition
-    LaunchedEffect(Unit) {
-        viewModel.initialize(activity)
-        if (uiState.useBiometric) {
-            viewModel.attemptBiometric(activity, onUnlocked)
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -58,9 +44,8 @@ fun BiometricLockScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // App logo / title
         Icon(
-            imageVector = Icons.Default.Fingerprint,
+            imageVector = Icons.Default.Lock,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.primary,
@@ -76,38 +61,31 @@ fun BiometricLockScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (uiState.useBiometric) {
-            Text(
-                text = "Use biometric to unlock",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            )
-        } else {
-            Text(
-                text = "Enter PIN to unlock",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            )
-        }
+        Text(
+            text = "Enter PIN to sign in",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+        )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // PIN dots
+        // Demo hint — shows available PINs for each pre-seeded account
+        Text(
+            text = "1111 · Alice   2222 · Bob   4444 · Charlie",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         PinDots(filledCount = uiState.pinInput.length)
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Error messages
         if (uiState.pinError) {
             Text(
-                text = "Incorrect PIN. Try again.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        if (uiState.authFailed) {
-            Text(
-                text = "Authentication failed. Use PIN instead.",
+                text = "Unknown PIN. Try again.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -115,31 +93,15 @@ fun BiometricLockScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Number pad
         NumberPad(
             onDigit = { digit ->
                 viewModel.onPinDigitEntered(digit)
-                // Auto-submit when 4 digits entered
                 if (uiState.pinInput.length == 3) {
-                    // After this digit, length will be 4
                     viewModel.verifyPin(onUnlocked)
                 }
             },
             onDelete = { viewModel.onPinDelete() },
-            onBiometric = if (uiState.useBiometric) {
-                { viewModel.attemptBiometric(activity, onUnlocked) }
-            } else null,
         )
-
-        // Fallback link when biometric is available
-        if (uiState.useBiometric && !uiState.authFailed) {
-            Spacer(modifier = Modifier.height(16.dp))
-            TextButton(onClick = {
-                viewModel.attemptBiometric(activity, onUnlocked)
-            }) {
-                Text("Tap to retry biometric")
-            }
-        }
     }
 }
 
@@ -167,7 +129,6 @@ private fun PinDots(filledCount: Int) {
 private fun NumberPad(
     onDigit: (Char) -> Unit,
     onDelete: () -> Unit,
-    onBiometric: (() -> Unit)?,
 ) {
     val rows = listOf(
         listOf('1', '2', '3'),
@@ -180,37 +141,22 @@ private fun NumberPad(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         rows.forEach { row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 row.forEach { digit ->
                     NumberKey(digit = digit, onClick = { onDigit(digit) })
                 }
             }
         }
 
-        // Bottom row: biometric / 0 / delete
+        // Bottom row: empty / 0 / delete
         Row(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Biometric button or empty space
-            Box(modifier = Modifier.size(64.dp), contentAlignment = Alignment.Center) {
-                if (onBiometric != null) {
-                    IconButton(onClick = onBiometric) {
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = "Use biometric",
-                            modifier = Modifier.size(32.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
+            Box(modifier = Modifier.size(64.dp))
 
             NumberKey(digit = '0', onClick = { onDigit('0') })
 
-            // Delete button
             Box(modifier = Modifier.size(64.dp), contentAlignment = Alignment.Center) {
                 IconButton(onClick = onDelete) {
                     Icon(

@@ -99,6 +99,14 @@ fun PaymentConfirmScreen(
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "via SEPA Instant  ·  Bank balance",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            )
+
             if (payment.reference.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(

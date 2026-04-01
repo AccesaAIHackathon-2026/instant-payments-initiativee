@@ -1,6 +1,7 @@
 package eu.accesa.blinkpay.data.api
 
 import eu.accesa.blinkpay.BuildConfig
+import eu.accesa.blinkpay.util.UserSession
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -8,8 +9,6 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
-
-    private val BASE_URL = BuildConfig.BANK_API_BASE_URL
 
     private val okHttp: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -29,13 +28,27 @@ object ApiClient {
             .build()
     }
 
-    private val retrofit: Retrofit by lazy {
-        Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttp)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
+    private var _bankApi: BankApi? = null
+    private var _currentBaseUrl: String? = null
 
-    val bankApi: BankApi by lazy { retrofit.create(BankApi::class.java) }
+    val bankApi: BankApi
+        get() {
+            val url = UserSession.bankBaseUrl.ifBlank { BuildConfig.BANK_API_BASE_URL }
+            if (_bankApi == null || _currentBaseUrl != url) {
+                _currentBaseUrl = url
+                _bankApi = Retrofit.Builder()
+                    .baseUrl(url)
+                    .client(okHttp)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                    .create(BankApi::class.java)
+            }
+            return _bankApi!!
+        }
+
+    /** Call after a new PIN login so the next API call uses the new bank URL. */
+    fun onSessionChanged() {
+        _bankApi = null
+        _currentBaseUrl = null
+    }
 }

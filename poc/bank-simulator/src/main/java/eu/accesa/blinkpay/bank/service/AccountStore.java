@@ -2,6 +2,7 @@ package eu.accesa.blinkpay.bank.service;
 
 import eu.accesa.blinkpay.bank.model.Account;
 import eu.accesa.blinkpay.bank.model.AccountType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -14,28 +15,37 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * In-memory commercial bank account registry.
  *
- * Pre-seeded with the three POC test accounts. Digital Euro wallets for
- * the consumer accounts are managed separately by {@link WalletStore}.
+ * Seeded accounts depend on the configured bank identity:
  *
- * | Name               | IBAN                    | Phone        | Bank Balance | Type     |
- * |--------------------|-------------------------|--------------|--------------|----------|
- * | Alice Consumer     | DE89370400440532013001  | +49111000001 | €1 000.00    | CONSUMER |
- * | Bob Consumer       | DE89370400440532013002  | +49111000002 |   €500.00    | CONSUMER |
- * | Retail Store GmbH  | DE89370400440532013099  | —            |     €0.00    | MERCHANT |
+ * bank-a (DE89370400440532013xxx):
+ *   Alice Consumer  | 001 | +49111000001 | €1 000.00 | CONSUMER
+ *   Bob Consumer    | 002 | +49111000002 |   €500.00 | CONSUMER
+ *   Retail Store    | 099 | —            |     €0.00 | MERCHANT
+ *
+ * bank-b (DE89370400440532014xxx):
+ *   Charlie Consumer | 001 | +49222000001 | €800.00 | CONSUMER
+ *   Metro Market     | 099 | —            |   €0.00 | MERCHANT
  */
 @Component
 public class AccountStore {
 
-    private static final String IBAN_PREFIX = "DE89370400440532013";
-
+    private final String ibanPrefix;
     private final Map<String, Account> byIban  = new ConcurrentHashMap<>();
     private final Map<String, String>  byAlias = new ConcurrentHashMap<>(); // alias → IBAN
     private final AtomicInteger ibanCounter = new AtomicInteger(100);
 
-    public AccountStore() {
-        seed("001", "Alice Consumer",    "+49111000001", "1000.00", AccountType.CONSUMER);
-        seed("002", "Bob Consumer",      "+49111000002",  "500.00", AccountType.CONSUMER);
-        seed("099", "Retail Store GmbH", null,              "0.00", AccountType.MERCHANT);
+    public AccountStore(@Value("${bank.id}") String bankId,
+                        @Value("${bank.iban-prefix}") String ibanPrefix) {
+        this.ibanPrefix = ibanPrefix;
+        if ("bank-b".equals(bankId)) {
+            seed("001", "Charlie Consumer", "+49222000001", "800.00", AccountType.CONSUMER);
+            seed("099", "Metro Market",     null,             "0.00", AccountType.MERCHANT);
+        } else {
+            // bank-a (default)
+            seed("001", "Alice Consumer",    "+49111000001", "1000.00", AccountType.CONSUMER);
+            seed("002", "Bob Consumer",      "+49111000002",  "500.00", AccountType.CONSUMER);
+            seed("099", "Retail Store GmbH", null,              "0.00", AccountType.MERCHANT);
+        }
     }
 
     public Optional<Account> findByIban(String iban) {
@@ -60,7 +70,7 @@ public class AccountStore {
             throw new ValidationException("Phone alias already registered: " + phoneAlias);
         }
         String suffix = String.format("%03d", ibanCounter.getAndIncrement());
-        Account acc = new Account(IBAN_PREFIX + suffix, holderName, phoneAlias,
+        Account acc = new Account(ibanPrefix + suffix, holderName, phoneAlias,
                 bankBalance, type);
         byIban.put(acc.getIban(), acc);
         if (phoneAlias != null) byAlias.put(phoneAlias, acc.getIban());
@@ -69,7 +79,7 @@ public class AccountStore {
 
     private void seed(String suffix, String name, String phone,
                       String bank, AccountType type) {
-        Account acc = new Account(IBAN_PREFIX + suffix, name, phone,
+        Account acc = new Account(ibanPrefix + suffix, name, phone,
                 new BigDecimal(bank), type);
         byIban.put(acc.getIban(), acc);
         if (phone != null) byAlias.put(phone, acc.getIban());

@@ -16,14 +16,11 @@ import eu.accesa.blinkpay.ui.payment.PaymentConfirmScreen
 import eu.accesa.blinkpay.ui.payment.PaymentResultScreen
 import eu.accesa.blinkpay.ui.payment.PaymentViewModel
 import eu.accesa.blinkpay.ui.qr.QrScanScreen
-import eu.accesa.blinkpay.ui.registration.RegistrationScreen
-import eu.accesa.blinkpay.util.UserSession
 import java.math.BigDecimal
 import java.net.URLDecoder
 import java.net.URLEncoder
 
 object Routes {
-    const val REGISTER = "register"
     const val LOCK = "lock"
     const val HOME = "home"
     const val QR_SCAN = "qr_scan"
@@ -50,22 +47,10 @@ object Routes {
 
 @Composable
 fun BlinkPayNavGraph(navController: NavHostController) {
-    val startDestination = if (UserSession.isRegistered) Routes.LOCK else Routes.REGISTER
-
     NavHost(
         navController = navController,
-        startDestination = startDestination,
+        startDestination = Routes.LOCK,
     ) {
-        composable(Routes.REGISTER) {
-            RegistrationScreen(
-                onRegistered = {
-                    navController.navigate(Routes.LOCK) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
-                    }
-                }
-            )
-        }
-
         composable(Routes.LOCK) {
             BiometricLockScreen(
                 onUnlocked = {

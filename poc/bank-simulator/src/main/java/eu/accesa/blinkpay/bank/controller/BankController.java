@@ -10,6 +10,8 @@ import eu.accesa.blinkpay.bank.dto.RegisterResponse;
 import eu.accesa.blinkpay.bank.dto.RtpRequest;
 import eu.accesa.blinkpay.bank.dto.RtpView;
 import eu.accesa.blinkpay.bank.dto.ScaRequest;
+import com.prowidesoftware.swift.model.mx.MxPacs00200110;
+import com.prowidesoftware.swift.model.mx.MxPacs00800108;
 import eu.accesa.blinkpay.bank.dto.VopResponse;
 import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
 import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
@@ -121,6 +123,16 @@ public class BankController {
     @PostMapping("/sca")
     public PaymentResult sca(@RequestBody ScaRequest request) {
         return bankService.confirmPayment(request);
+    }
+
+    /**
+     * Inter-bank credit leg — called by FIPS to credit the payee on this bank.
+     * Not authenticated by API key (internal network call from FIPS).
+     * Returns pacs.002 ACSC confirming the credit was applied.
+     */
+    @PostMapping("/receive")
+    public MxPacs00200110 receive(@RequestBody MxPacs00800108 pacs008) {
+        return bankService.receiveIncoming(pacs008);
     }
 
     // --- Stretch: Request-to-Pay (Flow B2) -----------------------------------

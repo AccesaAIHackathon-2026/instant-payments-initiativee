@@ -1,6 +1,7 @@
 package eu.accesa.blinkpay.bank.service;
 
 import eu.accesa.blinkpay.bank.model.DigitalEuroWallet;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -12,14 +13,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory Digital Euro wallet registry.
  *
- * Pre-seeded with wallets for the two consumer test accounts.
- * Merchants are not seeded — they receive settlement directly into their
- * commercial bank account, as per the ECB two-tier model.
+ * Pre-seeded wallets per bank identity (consumers only — merchants have no wallet):
  *
- * | Owner IBAN              | Initial Balance |
- * |-------------------------|-----------------|
- * | DE89370400440532013001  | €50.00 (Alice)  |
- * | DE89370400440532013002  | €20.00 (Bob)    |
+ * bank-a: Alice €50, Bob €20
+ * bank-b: Charlie €30
  */
 @Component
 public class WalletStore {
@@ -27,9 +24,14 @@ public class WalletStore {
     private final Map<UUID,   DigitalEuroWallet> byWalletId  = new ConcurrentHashMap<>();
     private final Map<String, DigitalEuroWallet> byOwnerIban = new ConcurrentHashMap<>();
 
-    public WalletStore() {
-        seed("DE89370400440532013001", "50.00");
-        seed("DE89370400440532013002", "20.00");
+    public WalletStore(@Value("${bank.id}") String bankId,
+                       @Value("${bank.iban-prefix}") String ibanPrefix) {
+        if ("bank-b".equals(bankId)) {
+            seed(ibanPrefix + "001", "30.00");  // Charlie
+        } else {
+            seed(ibanPrefix + "001", "50.00");  // Alice
+            seed(ibanPrefix + "002", "20.00");  // Bob
+        }
     }
 
     /** Creates and registers a new wallet for the given account. */

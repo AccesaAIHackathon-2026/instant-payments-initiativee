@@ -5,8 +5,6 @@ import eu.accesa.blinkpay.data.api.dto.PaymentRequest
 import eu.accesa.blinkpay.data.api.dto.PaymentResult
 import eu.accesa.blinkpay.data.api.dto.ScaRequest
 import eu.accesa.blinkpay.data.dto.AccountViewDto
-import eu.accesa.blinkpay.data.dto.RegisterRequestDto
-import eu.accesa.blinkpay.data.dto.RegisterResponseDto
 import eu.accesa.blinkpay.data.dto.WalletTransferRequestDto
 import eu.accesa.blinkpay.data.dto.WalletTransferResponseDto
 import eu.accesa.blinkpay.data.dto.WalletViewDto
@@ -16,9 +14,6 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 interface BankApi {
-
-    @POST("bank/register")
-    suspend fun register(@Body request: RegisterRequestDto): RegisterResponseDto
 
     @GET("bank/accounts/{iban}")
     suspend fun getAccount(@Path("iban") iban: String): AccountViewDto

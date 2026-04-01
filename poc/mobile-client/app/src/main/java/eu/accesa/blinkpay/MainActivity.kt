@@ -27,9 +27,10 @@ class MainActivity : FragmentActivity() {
             BlinkPayTheme(appTheme = appTheme) {
                 val navController = rememberNavController()
 
-                // When the app is locked and we're not already on the lock screen, navigate to it
+                // When the app returns from background, navigate to lock screen so the
+                // user re-enters their PIN. Skip if no session exists yet (first launch).
                 androidx.compose.runtime.LaunchedEffect(isLocked) {
-                    if (isLocked) {
+                    if (isLocked && UserSession.isRegistered) {
                         navController.navigate(Routes.LOCK) {
                             popUpTo(0) { inclusive = true }
                         }

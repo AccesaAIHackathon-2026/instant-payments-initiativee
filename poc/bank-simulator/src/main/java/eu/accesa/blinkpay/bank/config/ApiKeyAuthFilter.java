@@ -31,7 +31,9 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith("/actuator");
+        String uri = request.getRequestURI();
+        // /actuator — health checks; /bank/receive — internal FIPS → bank call
+        return uri.startsWith("/actuator") || uri.equals("/bank/receive");
     }
 
     @Override

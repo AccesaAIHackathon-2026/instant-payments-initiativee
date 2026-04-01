@@ -50,10 +50,15 @@ public class FipsService {
     private static final int MAX_PAGE_SIZE = 500;
 
     private final ConcurrentHashMap<UUID, Transaction> store = new ConcurrentHashMap<>();
+    private final BankForwardingClient bankForwarder;
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
+
+    public FipsService(BankForwardingClient bankForwarder) {
+        this.bankForwarder = bankForwarder;
+    }
 
     public MxPacs00200110 submit(MxPacs00800108 request) {
         CreditTransferTransaction39 txInfo = extractTxInfo(request);
@@ -92,9 +97,21 @@ public class FipsService {
                 debtorName, creditorName, endToEndId, null);
         store.put(uetr, tx);
 
-        // Simulate instant settlement: RCVD → ACSP → ACSC
+        // SCT Inst flow: RCVD → ACSP → forward to destination bank → ACSC
         log.info("[FIPS] RCVD→ACSP | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSP);
+
+        log.info("[FIPS] FORWARD→ | uetr={} | routing pacs.008 to destination bank", uetr);
+        try {
+            bankForwarder.forward(creditorIBAN, request);
+        } catch (Exception e) {
+            log.warn("[FIPS] FORWARD FAILED | uetr={} | {} — treating as RJCT AC03", uetr, e.getMessage());
+            tx.setStatus(TransactionStatus.RJCT);
+            tx.setRejectReason("AC03");
+            store.put(uetr, tx);
+            return buildPacs002(uetrStr, endToEndId, TransactionStatus.RJCT, null, "AC03");
+        }
+
         log.info("[FIPS] ACSP→ACSC | uetr={}", uetr);
         tx.setStatus(TransactionStatus.ACSC);
         Instant settledAt = Instant.now();

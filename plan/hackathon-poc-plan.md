@@ -76,8 +76,11 @@ Transaction {
 - Proxy lookup: phone number or email → IBAN
 - Verification of Payee (VoP): name match on IBAN
 - SCA stub: any PIN "1234" is accepted
-- Waterfall: if Digital Euro balance insufficient, top up from linked bank account
-- Translates REST calls from apps into `pacs.008` toward FIPS network
+- **Two distinct payment modes (important architectural distinction):**
+  - **SEPA Instant / A2A** — debits the commercial bank balance only; Digital Euro wallet is never touched
+  - **DE P2P Transfer (stretch)** — debits the DE custody wallet; reverse waterfall auto-tops-up from bank if DE insufficient; forward waterfall caps DE holding on the receiving side
+- Translates SEPA Instant calls from apps into `pacs.008` toward FIPS network
+- Settles DE transfers directly between custody wallets (no FIPS involvement)
 
 **Tech stack:**
 - Java 21 + Spring Boot 3.x REST service
@@ -106,11 +109,11 @@ Transaction {
 **Role:** Mobile-first wallet app for the end user. Supports P2P payments and paying a retailer via QR code scan (MVP) or incoming Request-to-Pay notification (stretch).
 
 **Flows to demo:**
-1. **P2P payment** — Alice sends €10 to Bob via phone number proxy lookup
-2. **QR merchant payment (MVP)** — Alice scans retailer QR code, confirms payment, pays instantly
+1. **P2P payment (SEPA Instant)** — Alice sends €10 to Bob via phone number proxy; debits bank balance only
+2. **QR merchant payment (MVP)** — Alice scans retailer QR code, confirms payment, pays instantly; debits bank balance only
 3. **RTP merchant payment (stretch)** — Alice receives incoming payment request notification, approves
-4. **Digital Euro balance** — Alice's wallet shows split view: bank balance + Digital Euro balance
-5. **Waterfall** — Alice pays €60 (more than her €50 DE balance), waterfall tops up from bank
+4. **Digital Euro balance** — Alice's wallet shows split view: bank balance + Digital Euro balance; user can manually top-up/redeem between them
+5. **DE P2P Transfer (stretch)** — Alice taps Bob's phone (NFC simulated via QR/Wi-Fi); DE balance moves device-to-device with no server involved; waterfall only triggers at re-sync when back online
 
 **Tech stack:**
 - Native Android app (Kotlin + Jetpack Compose)
@@ -208,17 +211,72 @@ Retailer App  →  polling GET /bank/rtp-status/{rtpId} (every 2s)
 Retailer App  →  detects SETTLED → green confirmation screen
 ```
 
-### Flow C — Digital Euro Waterfall
+### Flow C — DE P2P Transfer / Stretch (simulated NFC Alice → Bob)
+
+#### Real-world model (what we are simulating)
+
+Digital Euro is stored **on the device** (secure element / hardware wallet), not on the bank's server.
+Transfers are **fully offline, device-to-device via NFC** — no bank, no FIPS, no internet required.
 
 ```
-Alice's Digital Euro balance: €20
-Payment amount: €50
+Real-world lifecycle:
 
-Bank: DE balance (€20) < amount (€50)
-Bank: waterfall → debit €30 from bank account, top-up DE balance to €50
-Bank: proceed with payment from DE balance
-Bank → FIPS: pacs.008 (full €50)
+  [ONLINE — pre-load]
+  Alice goes online → calls bank → bank debits her bank account, credits her device SE
+  Alice's device now holds €50 DE locally.
+
+  [OFFLINE — NFC transfer]
+  Alice taps Charlie's phone.
+  Alice's SE: -€30  (cryptographic debit, no server involved)
+  Charlie's SE: +€30 (cryptographic credit, no server involved)
+  Transaction is final. Neither bank nor FIPS is contacted.
+
+  [ONLINE — re-sync, when device reconnects]
+  Charlie's device syncs with his bank.
+  If Charlie's DE balance > €3 000 (holding limit):
+    Forward waterfall → excess automatically moved to Charlie's bank account.
+  If Alice wants to reload her SE before the next offline payment:
+    Reverse waterfall → Alice tops up from her bank account (requires connectivity).
 ```
+
+**Key rules:**
+- The bank server only tracks what was loaded onto / redeemed from the device. It does NOT track individual offline spends.
+- Waterfall and reverse waterfall are **re-sync-time** operations, not transfer-time.
+- Reverse waterfall is really just **pre-loading**: Alice must be online to top up her device before spending offline. If her device balance is insufficient she cannot pay — unlike SEPA Instant there is no automatic mid-transfer bank debit.
+- **No FIPS, no inter-bank routing** — ever. Not for intra-bank, not for inter-bank. DE transfers never touch the SCT Inst rail.
+
+#### POC simulation (what we actually build)
+
+Real NFC / secure elements are out of scope. We simulate the offline transfer as a local balance exchange between the two apps over Wi-Fi, treating each app's `SharedPreferences` as the device's secure element:
+
+```
+POC Flow:
+
+  [Top-up — already implemented]
+  Alice app → POST /bank/wallet/{id}/topup { amount: 50 }
+  Bank debits Alice's bank account, acknowledges the load.
+  App stores DE balance locally (SharedPreferences).
+
+  [NFC simulation — new, stretch]
+  Alice app generates a signed transfer token (amount + sender IBAN + nonce).
+  Charlie's app receives token (QR scan or direct Wi-Fi exchange).
+  Both apps update their local DE balances immediately — no server call.
+
+  [Re-sync — new, stretch]
+  When Charlie's app goes online:
+    POST /bank/wallet/{id}/sync { currentBalance }
+    If balance > €3 000: bank auto-redeems excess → Charlie's bank account credited.
+  When Alice's app goes online:
+    POST /bank/wallet/{id}/sync { currentBalance }
+    Bank records the spend (loaded amount vs current balance = spent amount).
+```
+
+**POC simplification for demo day:** if implementing the full local-storage model is too expensive,
+treat `WalletStore` as the device ledger mirror and demonstrate the transfer via a direct API call
+between the two apps — clearly labelling it as "NFC simulation" in the UI. The waterfall/re-sync
+step can still be demonstrated separately as a manual "sync" button.
+
+**No new FIPS interaction. No pacs.008. No inter-bank routing.**
 
 ---
 
@@ -249,18 +307,78 @@ Bank → FIPS: pacs.008 (full €50)
 ## MVP vs Stretch Goals
 
 ### MVP (must work for demo)
-- [ ] Flow A: P2P payment — Alice → Bob via phone proxy
-- [ ] Flow B1: QR merchant payment — Alice scans retailer QR, pays instantly
+- [ ] Flow A: P2P SEPA Instant payment — Alice → Bob via phone proxy (bank balance)
+- [ ] Flow B1: QR merchant payment — Alice scans retailer QR, pays instantly (bank balance)
 - [ ] Real-time settlement confirmation on retailer screen (polling)
 - [ ] Digital Euro balance displayed separately from bank balance
+- [ ] Manual top-up / redeem between bank and DE wallet
+- [ ] Payment confirm screen labels payment as "via SEPA Instant · Bank balance"
 
 ### Stretch (build only if core flows done before 15:00)
 - [ ] Flow B2: Request-to-Pay — retailer sends RTP, Alice approves in app
-- [ ] Flow C: Waterfall top-up
+- [ ] Flow C: DE P2P Transfer — Alice → Bob offline (NFC simulated); waterfall/reverse waterfall at re-sync only
 - [ ] VoP mismatch warning in UI
 - [ ] Transaction history screen
 - [ ] Rejection scenario (insufficient funds)
 - [ ] Animated 10-second settlement countdown
+
+---
+
+## Next Steps (post-hackathon / upcoming sprint)
+
+### 1 — DE Direct Transfer with offline model + waterfall on re-sync
+
+**Backend (`bank-simulator`)**
+- `POST /bank/de-transfer` — accepts `{ debtorIBAN, creditorIBAN, amount, transferToken }`;
+  no SCA step (offline transaction is pre-authorised on device); debits debtor DE wallet, credits creditor DE wallet
+- `POST /bank/wallet/{id}/sync { currentBalance }` — called when device reconnects;
+  if `currentBalance > 3000`: forward waterfall → redeem excess to bank account;
+  if `currentBalance < loaded`: record spend delta (audit trail)
+- No FIPS involvement — DE transfers settle entirely within the bank custody ledger
+
+**Android (`mobile-client`)**
+- Store DE balance locally in `SharedPreferences` (device = secure element proxy)
+- NFC beam (primary): `NfcAdapter` Android Beam / HCE — Alice's phone sends a signed transfer token to Charlie's phone; both update local DE balance immediately
+- QR fallback: Alice generates a DE transfer QR (amount + sender IBAN + nonce + amount); Charlie scans it; same local balance update
+- "Sync" button on Account screen: calls `/bank/wallet/{id}/sync`; triggers forward waterfall display if over limit
+- Reverse waterfall pre-load: if Alice's local DE balance < desired send amount, prompt to top-up from bank first (requires connectivity)
+
+**Testing**
+- Two real Android phones on same Wi-Fi — Alice taps Charlie, both balances update locally, then each syncs independently
+- QR fallback tested on emulator (no NFC)
+
+---
+
+### 2 — Bank Admin Web App
+
+New React (TypeScript) app at port `3002` (or a tab within the existing retail app).
+
+**Pages:**
+- **Accounts** — table of all accounts for the selected bank; shows IBAN, holder name, type, bank balance, DE wallet balance; filter by type (CONSUMER / MERCHANT)
+- **Transactions** — full transaction ledger across all accounts; columns: UETR, timestamp, debtor, creditor, amount, status (ACSC / RJCT)
+- **Wallets** — all DE custody wallets; wallet ID, owner IBAN, balance, loaded total vs current (spend delta)
+- **FIPS log** — proxy view of `GET /fips/transactions` showing all inter-bank settlements
+
+**Bank selector:** dropdown or URL param switches between bank-a (`:8080`) and bank-b (`:8082`).
+
+**New endpoints needed (bank-simulator):**
+```
+GET /bank/admin/accounts        # all accounts
+GET /bank/admin/transactions    # all transactions across all accounts
+GET /bank/admin/wallets         # all DE wallets
+```
+
+---
+
+### 3 — Retailer Web App: dual-bank pages
+
+The existing `retail-web-app` currently hardcodes bank-a's API. Extend to serve both retailers:
+
+- **Route `/bank-a`** — Retail Store GmbH (bank-a, IBAN `DE89370400440532013099`, port `8080`)
+- **Route `/bank-b`** — Metro Market (bank-b, IBAN `DE89370400440532014099`, port `8082`)
+- A landing page at `/` lets the cashier pick which retailer they are operating as
+- Each retailer page is self-contained: generates QR for its own IBAN, polls its own bank for settlement confirmation
+- Bank URL and merchant IBAN passed as config or derived from the route — no code duplication
 
 ---
 
@@ -283,7 +401,9 @@ Bank → FIPS: pacs.008 (full €50)
 
 - Real TIPS/RT1 connectivity
 - Real eIDAS certificates or OAuth2
-- Offline payments (NFC/SE)
-- Multi-bank routing (single bank simulates both sides)
+- Real NFC / Secure Element (DE P2P transfer is simulated; NFC + SE is the real-world delivery mechanism)
+- Multi-bank routing for SEPA Instant (single bank instance simulates both sides for A2A flows)
+- Cryptographic signing of DE transfer tokens (POC uses plain exchange; real deployment requires SE-backed signing)
+- Automatic re-sync on reconnect (POC exposes a manual "Sync" button for demo purposes)
 - Sanctions screening
 - Production-grade security
