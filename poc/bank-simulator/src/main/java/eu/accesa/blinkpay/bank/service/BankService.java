@@ -373,8 +373,10 @@ public class BankService {
         // --- Inter-bank: route through FIPS — FIPS forwards to destination bank
         log.info("[SETTLE] INTER-BANK | uetr={} | submitting pacs.008 to FIPS", p.uetr());
         try {
+            // Use creditorReference as endToEndId so bank-a can fire the SSE event on the correct key
+            String endToEndId = p.creditorReference() != null ? p.creditorReference() : p.uetr().toString();
             fips.submit(p.uetr(), p.debtorIBAN(), p.creditorIBAN(), p.amount(),
-                    p.debtorName(), p.creditorName(), "E2E-" + p.uetr(), p.remittanceInfo());
+                    p.debtorName(), p.creditorName(), endToEndId, p.remittanceInfo());
         } catch (FipsRejectedException e) {
             log.warn("[SETTLE] FIPS RJCT {} | uetr={} | rolling back bank +€{}", e.getRejectCode(), p.uetr(), p.amount());
             debtor.credit(p.amount());
@@ -495,11 +497,16 @@ public class BankService {
         creditor.credit(amount);
         Instant now = Instant.now();
 
+        // endToEndId carries the creditorReference set by the sending bank (see settle())
+        String creditorReference = endToEndId;
+
         Transaction settled = Transaction.settled(uetr, debtorIBAN, creditorIBAN,
-                debtorName, creditorName, amount, null, null);
+                debtorName, creditorName, amount, creditorReference, null);
         creditor.addTransaction(settled);
 
-        log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{}", uetr, debtorIBAN, creditorIBAN, amount);
+        log.info("[RECEIVE] CREDIT | uetr={} | {}→{} €{} | ref={}", uetr, debtorIBAN, creditorIBAN, amount, creditorReference);
+
+        sse.notifySettlement(creditorReference, settled);
 
         return buildPacs002Acsc(uetrStr, endToEndId, now);
     }
