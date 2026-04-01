@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: instant-payments-config
+  namespace: instant-payments
+  labels:
+    team: instant-payments
+data:
+  FIPS_BASE_URL: "http://fips-simulator:8081"
+  BANK_A_BASE_URL: "https://instant-payments-api.134.149.74.195.sslip.io"
+  BANK_B_BASE_URL: "https://instant-payments-api.134.149.74.195.sslip.io"
