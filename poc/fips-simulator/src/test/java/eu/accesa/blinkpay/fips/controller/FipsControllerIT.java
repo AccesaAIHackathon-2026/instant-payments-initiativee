@@ -7,9 +7,14 @@ import eu.accesa.blinkpay.fips.util.Pacs008Factory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import eu.accesa.blinkpay.fips.service.BankForwardingClient;
+import eu.accesa.blinkpay.fips.config.BankRoutingProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -27,11 +32,33 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Each test uses a fresh UUID so they can share the same Spring context
  * without stepping on each other's in-memory state.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        classes = {eu.accesa.blinkpay.fips.FipsSimulatorApplication.class, FipsControllerIT.StubBankForwardingConfig.class})
 class FipsControllerIT {
 
     @Autowired
     private TestRestTemplate rest;
+
+    /**
+     * Replaces {@link BankForwardingClient} with a no-op stub so tests don't
+     * need the bank-simulator running on localhost:8080.
+     */
+    @TestConfiguration
+    static class StubBankForwardingConfig {
+        @Bean
+        @Primary
+        BankForwardingClient stubBankForwardingClient(BankRoutingProperties props) {
+            return new BankForwardingClient(props) {
+                @Override
+                public com.prowidesoftware.swift.model.mx.MxPacs00200110 forward(
+                        String creditorIBAN,
+                        com.prowidesoftware.swift.model.mx.MxPacs00800108 pacs008) {
+                    // No-op: pretend the bank accepted the payment
+                    return null;
+                }
+            };
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Happy path

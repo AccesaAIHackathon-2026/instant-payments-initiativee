@@ -1,12 +1,14 @@
 package eu.accesa.blinkpay.ui.nfc
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import eu.accesa.blinkpay.data.repository.DigitalEuroLedger
 import eu.accesa.blinkpay.nfc.NfcBridge
 import eu.accesa.blinkpay.nfc.NfcPaymentConfirmation
 import eu.accesa.blinkpay.nfc.NfcPaymentRequest
 import eu.accesa.blinkpay.nfc.NfcReaderCallback
+import eu.accesa.blinkpay.sync.OfflineSyncWorker
 import eu.accesa.blinkpay.util.UserSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +35,7 @@ sealed interface NfcSendUiState {
     data class Error(val message: String) : NfcSendUiState
 }
 
-class NfcSendViewModel : ViewModel() {
+class NfcSendViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<NfcSendUiState>(NfcSendUiState.WaitingForTap)
     val uiState: StateFlow<NfcSendUiState> = _uiState
@@ -90,6 +92,7 @@ class NfcSendViewModel : ViewModel() {
                     amount = request.amount,
                     receiverName = request.receiverName,
                 )
+                OfflineSyncWorker.schedule(getApplication())
             } else {
                 _uiState.value = NfcSendUiState.Error(
                     "Connection lost. Please tap phones again."

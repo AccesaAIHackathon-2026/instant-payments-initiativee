@@ -1,5 +1,7 @@
 package eu.accesa.blinkpay.data.api
 
+import eu.accesa.blinkpay.data.api.dto.OfflineSyncRequest
+import eu.accesa.blinkpay.data.api.dto.OfflineSyncResponse
 import eu.accesa.blinkpay.data.api.dto.PaymentInitiatedResponse
 import eu.accesa.blinkpay.data.api.dto.PaymentRequest
 import eu.accesa.blinkpay.data.api.dto.PaymentResult
@@ -32,4 +34,10 @@ interface BankApi {
 
     @POST("bank/sca")
     suspend fun confirmSca(@Body request: ScaRequest): PaymentResult
+
+    @POST("bank/wallet/{walletId}/sync-offline-transactions")
+    suspend fun syncOfflineTransactions(
+        @Path("walletId") walletId: String,
+        @Body request: OfflineSyncRequest,
+    ): OfflineSyncResponse
 }

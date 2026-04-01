@@ -5,7 +5,22 @@
       "Bash(find /c/Users/petru.scurtu/instant-payments-initiativee/poc/bank-simulator/src -type f -name *.java -o -name *.kt)",
       "Bash(./gradlew assembleDebug)",
       "Bash(ipconfig)",
-      "Bash(./gradlew compileDebugKotlin)"
+      "Bash(./gradlew compileDebugKotlin)",
+      "Bash(./gradlew compileJava)",
+      "Bash(ls:*)",
+      "Bash(mvn compile:*)",
+      "Bash(where mvn:*)",
+      "Bash(cmd.exe /c \"where mvn\")",
+      "Bash(cmd.exe /c \"mvn compile -q\")",
+      "Bash(where.exe mvn:*)",
+      "Bash(xxd /c/Users/petru.scurtu/instant-payments-initiativee/poc/fips-simulator/src/main/java/eu/accesa/blinkpay/fips/dto/FlowEvent.java)",
+      "Bash(xxd /c/Users/petru.scurtu/instant-payments-initiativee/poc/fips-simulator/src/main/java/eu/accesa/blinkpay/fips/model/TransactionView.java)",
+      "Bash(java:*)",
+      "Read(//c/Users/petru.scurtu/instant-payments-initiativee/poc/fips-simulator/**)",
+      "Bash(./gradlew build:*)",
+      "Bash(mvn test:*)",
+      "Bash(xargs grep:*)",
+      "Bash(mvn clean:*)"
     ]
   }
 }

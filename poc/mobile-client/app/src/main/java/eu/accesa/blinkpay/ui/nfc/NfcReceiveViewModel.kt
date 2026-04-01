@@ -1,11 +1,13 @@
 package eu.accesa.blinkpay.ui.nfc
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import eu.accesa.blinkpay.data.repository.DigitalEuroLedger
 import eu.accesa.blinkpay.nfc.NfcBridge
 import eu.accesa.blinkpay.nfc.NfcPayloadCodec
 import eu.accesa.blinkpay.nfc.NfcPaymentRequest
+import eu.accesa.blinkpay.sync.OfflineSyncWorker
 import eu.accesa.blinkpay.util.UserSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +25,7 @@ sealed interface NfcReceiveUiState {
     data class Error(val message: String) : NfcReceiveUiState
 }
 
-class NfcReceiveViewModel : ViewModel() {
+class NfcReceiveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<NfcReceiveUiState>(NfcReceiveUiState.EnteringAmount)
     val uiState: StateFlow<NfcReceiveUiState> = _uiState
@@ -55,6 +57,7 @@ class NfcReceiveViewModel : ViewModel() {
                         senderName = confirmation.senderName,
                         senderIban = confirmation.senderIban,
                     )
+                    OfflineSyncWorker.schedule(getApplication())
                 }
             }
         }

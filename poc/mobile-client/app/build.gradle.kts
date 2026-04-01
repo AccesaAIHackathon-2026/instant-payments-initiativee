@@ -99,6 +99,9 @@ dependencies {
     // Biometric
     implementation(libs.biometric)
 
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
+
     // Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

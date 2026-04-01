@@ -14,9 +14,9 @@ import eu.accesa.blinkpay.bank.dto.VopResponse;
 import eu.accesa.blinkpay.bank.dto.WalletTransferRequest;
 import eu.accesa.blinkpay.bank.dto.WalletTransferResponse;
 import eu.accesa.blinkpay.bank.dto.WalletView;
+import eu.accesa.blinkpay.bank.fips.FipsClient;
 import eu.accesa.blinkpay.bank.model.AccountType;
 import eu.accesa.blinkpay.bank.model.TransactionStatus;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -25,15 +25,15 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.file.Path;
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,7 +46,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * already running, the static initialiser starts it via Maven and waits
  * up to 90 s for the health endpoint to become available.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        classes = {eu.accesa.blinkpay.bank.BankSimulatorApplication.class, BankFlowIT.StubFipsConfig.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BankFlowIT {
 
@@ -57,20 +58,35 @@ class BankFlowIT {
     private static final String BOB_ALIAS     = "+49111000002";
     private static final String ALICE_ALIAS   = "+49111000001";
 
-    private static final int    FIPS_PORT   = 8081;
-    private static final String FIPS_HEALTH = "http://localhost:" + FIPS_PORT + "/actuator/health";
-
-    /** Non-null if this test run started FIPS; null if it was already up. */
-    private static Process fipsProcess;
-
     @Autowired
     private TestRestTemplate rest;
 
     @Value("${bank.api-key}")
     private String apiKey;
 
+    /**
+     * Replaces {@link FipsClient} with a no-op stub so tests don't
+     * need the fips-simulator running on localhost:8081.
+     */
+    @TestConfiguration
+    static class StubFipsConfig {
+        @Bean
+        @Primary
+        FipsClient stubFipsClient() {
+            return new FipsClient(RestClient.builder().build()) {
+                @Override
+                public void submit(UUID uetr, String debtorIBAN, String creditorIBAN,
+                                   java.math.BigDecimal amount, String debtorName,
+                                   String creditorName, String endToEndId,
+                                   String remittanceInfo) {
+                    // No-op: pretend FIPS accepted and settled the payment
+                }
+            };
+        }
+    }
+
     // -------------------------------------------------------------------------
-    // FIPS lifecycle
+    // Setup
     // -------------------------------------------------------------------------
 
     @BeforeAll
@@ -79,49 +95,6 @@ class BankFlowIT {
             request.getHeaders().set("X-Api-Key", apiKey);
             return execution.execute(request, body);
         });
-    }
-
-    @BeforeAll
-    void ensureFipsRunning() throws Exception {
-        if (isFipsUp()) return;
-
-        // Resolve fips-simulator directory relative to bank-simulator working dir
-        Path fipsDir = Path.of(System.getProperty("user.dir"))
-                .resolveSibling("fips-simulator");
-
-        // Use mvn wrapper / system mvn — works on both Unix and Windows Git Bash
-        String mvnCmd = System.getProperty("os.name", "").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
-
-        fipsProcess = new ProcessBuilder(mvnCmd, "spring-boot:run")
-                .directory(fipsDir.toFile())
-                .redirectErrorStream(true)
-                .start();
-
-        Instant deadline = Instant.now().plusSeconds(90);
-        while (Instant.now().isBefore(deadline)) {
-            if (isFipsUp()) return;
-            Thread.sleep(2_000);
-        }
-        throw new IllegalStateException("FIPS simulator did not start within 90 s at " + FIPS_HEALTH);
-    }
-
-    @AfterAll
-    void stopFipsIfStarted() {
-        if (fipsProcess != null) {
-            fipsProcess.destroy();
-            fipsProcess = null;
-        }
-    }
-
-    private static boolean isFipsUp() {
-        try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(FIPS_HEALTH).openConnection();
-            conn.setConnectTimeout(1_000);
-            conn.setReadTimeout(1_000);
-            return conn.getResponseCode() == 200;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     // -------------------------------------------------------------------------

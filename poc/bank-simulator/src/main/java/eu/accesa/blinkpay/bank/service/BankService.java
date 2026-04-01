@@ -1,6 +1,8 @@
 package eu.accesa.blinkpay.bank.service;
 
 import eu.accesa.blinkpay.bank.dto.AccountView;
+import eu.accesa.blinkpay.bank.dto.OfflineSyncRequest;
+import eu.accesa.blinkpay.bank.dto.OfflineSyncResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentInitiatedResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentRequest;
 import eu.accesa.blinkpay.bank.dto.PaymentResult;
@@ -41,8 +43,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -74,6 +79,9 @@ public class BankService {
 
     // RTP store: rtpId → RequestToPay
     private final Map<UUID, RequestToPay> rtpStore = new ConcurrentHashMap<>();
+
+    // Processed offline NFC transaction IDs — idempotency guard
+    private final Set<String> processedOfflineTxIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public BankService(AccountStore accounts, WalletStore wallets,
                        FipsClient fips, SseNotificationService sse,
@@ -226,6 +234,79 @@ public class BankService {
 
         return new WalletTransferResponse(wallet.getWalletId(), wallet.getOwnerIban(),
                 wallet.getBalance(), account.getBankBalance());
+    }
+
+    // -------------------------------------------------------------------------
+    // Offline NFC transaction sync
+    // -------------------------------------------------------------------------
+
+    /**
+     * Reconcile offline NFC P2P transfers with the bank.
+     * Each transaction is idempotent — re-syncing the same transactionId is a no-op.
+     *
+     * SEND:    wallet debited  (sender spent DE offline)
+     * RECEIVE: wallet credited (receiver received DE offline)
+     *
+     * Also records each new transaction in the account's transaction history.
+     */
+    public OfflineSyncResponse syncOfflineTransactions(UUID walletId, OfflineSyncRequest req) {
+        if (req.transactions() == null || req.transactions().isEmpty())
+            throw new ValidationException("At least one transaction is required");
+
+        DigitalEuroWallet wallet = wallets.findByWalletId(walletId)
+                .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        Account account = accounts.findByIban(wallet.getOwnerIban())
+                .orElseThrow(() -> new NotFoundException("Account not found: " + wallet.getOwnerIban()));
+
+        var accepted = new ArrayList<String>();
+        var duplicates = new ArrayList<String>();
+
+        for (var entry : req.transactions()) {
+            if (entry.transactionId() == null || entry.transactionId().isBlank())
+                throw new ValidationException("transactionId is required for each transaction");
+            if (entry.amount() == null || entry.amount().signum() <= 0)
+                throw new ValidationException("amount must be positive");
+
+            // Idempotency check
+            if (!processedOfflineTxIds.add(entry.transactionId())) {
+                duplicates.add(entry.transactionId());
+                continue;
+            }
+
+            // Resolve counterparty name for transaction history
+            String counterpartyName = accounts.findByIban(entry.counterpartyIban())
+                    .map(Account::getHolderName)
+                    .orElse("Unknown (" + entry.counterpartyIban() + ")");
+
+            switch (entry.direction()) {
+                case SEND -> {
+                    wallet.debit(entry.amount());
+                    Transaction tx = Transaction.settled(
+                            UUID.fromString(entry.transactionId()),
+                            wallet.getOwnerIban(), entry.counterpartyIban(),
+                            account.getHolderName(), counterpartyName,
+                            entry.amount(), null, "Offline NFC transfer");
+                    account.addTransaction(tx);
+                }
+                case RECEIVE -> {
+                    wallet.credit(entry.amount());
+                    Transaction tx = Transaction.settled(
+                            UUID.fromString(entry.transactionId()),
+                            entry.counterpartyIban(), wallet.getOwnerIban(),
+                            counterpartyName, account.getHolderName(),
+                            entry.amount(), null, "Offline NFC transfer");
+                    account.addTransaction(tx);
+                }
+            }
+
+            accepted.add(entry.transactionId());
+            log.info("[WALLET] NFC-SYNC | walletId={} | {} €{} {} {} | newDe=€{}",
+                    walletId, entry.direction(), entry.amount(),
+                    entry.direction() == OfflineSyncRequest.Direction.SEND ? "→" : "←",
+                    counterpartyName, wallet.getBalance());
+        }
+
+        return new OfflineSyncResponse(wallet.getWalletId(), wallet.getBalance(), accepted, duplicates);
     }
 
     // -------------------------------------------------------------------------

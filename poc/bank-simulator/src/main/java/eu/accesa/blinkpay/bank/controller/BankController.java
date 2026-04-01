@@ -1,6 +1,8 @@
 package eu.accesa.blinkpay.bank.controller;
 
 import eu.accesa.blinkpay.bank.dto.AccountView;
+import eu.accesa.blinkpay.bank.dto.OfflineSyncRequest;
+import eu.accesa.blinkpay.bank.dto.OfflineSyncResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentInitiatedResponse;
 import eu.accesa.blinkpay.bank.dto.PaymentRequest;
 import eu.accesa.blinkpay.bank.dto.PaymentResult;
@@ -114,6 +116,16 @@ public class BankController {
     public WalletTransferResponse redeem(@PathVariable UUID walletId,
                                          @RequestBody WalletTransferRequest request) {
         return bankService.redeemWallet(walletId, request);
+    }
+
+    /**
+     * Sync offline NFC P2P transactions from the mobile wallet.
+     * Idempotent — duplicate transactionIds are acknowledged but not re-applied.
+     */
+    @PostMapping("/wallet/{walletId}/sync-offline-transactions")
+    public OfflineSyncResponse syncOfflineTransactions(@PathVariable UUID walletId,
+                                                       @RequestBody OfflineSyncRequest request) {
+        return bankService.syncOfflineTransactions(walletId, request);
     }
 
     /** Transaction history for settlement polling (retailer polls this in Flow B1) */

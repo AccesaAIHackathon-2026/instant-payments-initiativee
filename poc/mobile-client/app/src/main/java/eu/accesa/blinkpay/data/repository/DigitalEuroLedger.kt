@@ -3,13 +3,16 @@ package eu.accesa.blinkpay.data.repository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.math.BigDecimal
+import java.util.UUID
 
 data class OfflineTransfer(
+    val transactionId: String = UUID.randomUUID().toString(),
     val counterpartyName: String,
     val counterpartyIban: String,
     val amount: BigDecimal,
     val isSend: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
+    val synced: Boolean = false,
 )
 
 object DigitalEuroLedger {
@@ -47,5 +50,15 @@ object DigitalEuroLedger {
             amount = amount,
             isSend = false,
         )
+    }
+
+    fun getUnsyncedTransfers(): List<OfflineTransfer> =
+        _transfers.value.filter { !it.synced }
+
+    fun markSynced(transactionIds: List<String>) {
+        _transfers.value = _transfers.value.map { transfer ->
+            if (transfer.transactionId in transactionIds) transfer.copy(synced = true)
+            else transfer
+        }
     }
 }
