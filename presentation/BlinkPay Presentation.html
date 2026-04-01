@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BlinkPay — Hackathon Submission</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Open Sans', sans-serif;
+    background: #fff;
+    color: #000;
+    padding: 0;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 50px;
+    page-break-after: always;
+  }
+
+  .page:last-child { page-break-after: auto; }
+
+  /* ── Header ── */
+  .header {
+    background: #283B41;
+    border-radius: 6px;
+    padding: 22px 30px;
+    margin-bottom: 28px;
+  }
+  .header h1 {
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .header .subtitle {
+    color: #B0BEC5;
+    font-size: 13px;
+  }
+  .header .team {
+    margin-top: 6px;
+  }
+  .header .team span.label {
+    color: #0097B9;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .header .team span.names {
+    color: #B0BEC5;
+    font-size: 12px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: #F5F5F5;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .card-header {
+    background: #243A40;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-header .triangle {
+    width: 0; height: 0;
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+  }
+  .triangle.teal { border-left: 14px solid #0097B9; }
+  .triangle.red { border-left: 14px solid #ED224B; }
+  .triangle.green { border-left: 14px solid #2E7D32; }
+
+  .card-header .title {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .card-header .card-sub {
+    color: #B0BEC5;
+    font-size: 11px;
+    margin-left: auto;
+  }
+  .card-body {
+    padding: 18px 24px;
+  }
+
+  /* ── Typography ── */
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .section-text {
+    font-size: 12px;
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+  .section-text:last-child { margin-bottom: 0; }
+
+  ul.bullets {
+    list-style: none;
+    padding: 0;
+  }
+  ul.bullets li {
+    font-size: 12px;
+    line-height: 1.6;
+    padding-left: 14px;
+    position: relative;
+    margin-bottom: 5px;
+  }
+  ul.bullets li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+  }
+  ul.bullets li strong.teal { color: #0097B9; }
+  ul.bullets li strong.red { color: #ED224B; }
+
+  /* ── Two-column layout ── */
+  .row {
+    display: flex;
+    gap: 20px;
+  }
+  .row > .card { flex: 1; }
+  .row > .card.wide { flex: 1.6; }
+
+  /* ── Fee comparison ── */
+  .fee-grid {
+    display: flex;
+    text-align: center;
+    gap: 0;
+  }
+  .fee-col {
+    flex: 1;
+    padding: 14px 10px;
+  }
+  .fee-col + .fee-col {
+    border-left: 1px solid #B0BEC5;
+  }
+  .fee-col .fee-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #283B41;
+    margin-bottom: 4px;
+  }
+  .fee-col .fee-number {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .fee-col .fee-detail {
+    font-size: 11px;
+    color: #546E7A;
+    line-height: 1.5;
+  }
+  .fee-col .fee-highlight {
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  .color-red { color: #D32F2F; }
+  .color-teal { color: #0097B9; }
+  .color-green { color: #2E7D32; }
+
+  /* ── Big number callout ── */
+  .callout-banner {
+    background: linear-gradient(135deg, #283B41 0%, #1a2a2f 100%);
+    border-radius: 6px;
+    padding: 24px 30px;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: center;
+    gap: 30px;
+  }
+  .callout-number {
+    font-size: 52px;
+    font-weight: 700;
+    color: #D32F2F;
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .callout-text {
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .callout-text strong { color: #0097B9; }
+  .callout-text .dim { color: #B0BEC5; font-size: 11px; }
+
+  /* ── Print ── */
+  @media print {
+    body { padding: 0; }
+    .page { padding: 20px 30px; max-width: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════ PAGE 1: Hackathon One Pager ════════════ -->
+<div class="page">
+
+  <div class="header">
+    <h1>Hackathon Submission — One Pager</h1>
+    <div class="subtitle">BlinkPay — SEPA Instant Payments &amp; Digital Euro</div>
+    <div class="team">
+      <span class="label">Team: </span>
+      <span class="names">Mihai Serban &nbsp;·&nbsp; Petru Scurtu &nbsp;·&nbsp; Marius Cocis</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Solution Overview -->
+    <div class="card wide">
+      <div class="card-header">
+        <div class="triangle teal"></div>
+        <span class="title">Solution Overview</span>
+        <span class="card-sub">SEPA Instant Payments for EU Tier-2/3 Banks</span>
+      </div>
+      <div class="card-body">
+        <div class="section-title">Problem</div>
+        <div class="section-text">EU Reg. 2024/886 mandates SEPA Instant for all PSPs by Jan 2025, yet most tier-2/3 banks lack the infrastructure. Building from scratch is expensive, complex, and slow.</div>
+
+        <div class="section-title">Solution</div>
+        <div class="section-text">BlinkPay is an end-to-end instant payment platform: mobile wallet (QR, NFC, biometric SCA), bank PSP (proxy lookup, VoP, Digital Euro custody), FIPS clearing, and merchant POS. Built as a modular POC in one day with real-time settlement and live flow visualization.</div>
+
+        <div class="section-title">Key Impact</div>
+        <div class="section-text">Full SCT Inst flow in 1 day vs months. Reusable architecture cuts integration effort ~60%. Sub-2s settlement with real-time merchant notification.</div>
+      </div>
+    </div>
+
+    <!-- Technology Stack -->
+    <div class="card">
+      <div class="card-header">
+        <div class="triangle red"></div>
+        <span class="title">Technology Stack</span>
+        <span class="card-sub">AI-Assisted Full-Stack</span>
+      </div>
+      <div class="card-body">
+        <ul class="bullets">
+          <li><strong>AI:</strong> Claude Code (Opus 4.6) — plan, code, debug, commit</li>
+          <li><strong>Frontend:</strong> React 19 + TypeScript + Vite</li>
+          <li><strong>Mobile:</strong> Android Kotlin, Jetpack Compose, CameraX</li>
+          <li><strong>Backend:</strong> Java 21 + Spring Boot 3.x, ISO 20022</li>
+          <li><strong>Infra:</strong> Docker Compose, nginx, SSE events</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- AI Insights: Limitations -->
+    <div class="card">
+      <div class="card-header">
+        <div class="triangle red"></div>
+        <span class="title">AI Insights: Limitations</span>
+        <span class="card-sub">Infrastructure &amp; tooling challenges</span>
+      </div>
+      <div class="card-body">
+        <ul class="bullets">
+          <li><strong>Network restrictions:</strong> Accesa corporate network blocked phone-laptop connectivity, requiring extensive workarounds</li>
+          <li><strong>Binary files:</strong> Claude cannot read/edit PPTX, images, or binary formats directly</li>
+          <li><strong>Context pressure:</strong> large codebases need careful context management across long sessions</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- AI Insights: Best Practices -->
+    <div class="card">
+      <div class="card-header">
+        <div class="triangle teal"></div>
+        <span class="title">AI Insights: Best Practices</span>
+        <span class="card-sub">What worked well</span>
+      </div>
+      <div class="card-body">
+        <ul class="bullets">
+          <li><strong>CLAUDE.md upfront:</strong> domain context and API contracts saved hours of back-and-forth</li>
+          <li><strong>Plan mode first:</strong> design before coding produced coherent multi-component systems</li>
+          <li><strong>Parallel agents:</strong> multiple search agents simultaneously cut research time dramatically</li>
+          <li><strong>Iterative commits:</strong> small, frequent commits kept the codebase stable throughout</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+
+</div>
+
+<!-- ════════════ PAGE 2: Competitive Advantage ════════════ -->
+<div class="page">
+
+  <div class="header">
+    <h1>Competitive Advantage</h1>
+    <div class="subtitle">Why SEPA Instant beats card networks — and where BlinkPay fits vs Wero</div>
+  </div>
+
+  <div class="callout-banner">
+    <div class="callout-number">$111B</div>
+    <div class="callout-text">
+      <strong>Visa and Mastercard collected $111 billion in interchange fees globally in 2024.</strong><br>
+      Merchants pay 1–2% on every card swipe — passed on to consumers as higher prices. In the US, swipe fees are retailers' largest cost after labor. Even in the EU (capped at 0.2–0.3%), processing costs reach billions.<br>
+      <span class="dim">SEPA Instant eliminates the middleman. BlinkPay brings merchant fees to zero.</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- vs Visa/Mastercard -->
+    <div class="card">
+      <div class="card-header">
+        <div class="triangle teal"></div>
+        <span class="title">vs Visa / Mastercard</span>
+        <span class="card-sub">Account-to-Account beats Card Networks</span>
+      </div>
+      <div class="card-body">
+        <ul class="bullets">
+          <li><strong class="teal">Zero merchant fees</strong> — no interchange, no acquirer, no scheme fees (vs 1-2% on cards)</li>
+          <li><strong class="teal">Instant settlement</strong> — &lt;10 seconds vs 1-3 business days with cards</li>
+          <li><strong class="teal">No chargebacks</strong> — irrevocable once settled (vs 120-day dispute window)</li>
+          <li><strong class="teal">No hardware</strong> — no POS terminals or EMV certification. Just QR or NFC</li>
+          <li><strong class="teal">EU sovereign rails</strong> — no US network dependency</li>
+          <li><strong class="teal">Regulatory mandate</strong> — EU Reg. 2024/886 makes SCT Inst mandatory</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- vs Wero -->
+    <div class="card">
+      <div class="card-header">
+        <div class="triangle red"></div>
+        <span class="title">vs Wero (EPI) — Our Positioning</span>
+        <span class="card-sub">Same rails, different market</span>
+      </div>
+      <div class="card-body">
+        <div class="section-text">Same SCT Inst backbone, different market:</div>
+        <ul class="bullets">
+          <li><strong class="red">Wero = closed club</strong> — 16 major EU banks. Hundreds of tier-2/3 banks excluded</li>
+          <li><strong class="red">BlinkPay = open platform</strong> — any bank can adopt, no consortium needed</li>
+          <li><strong class="red">Digital Euro native</strong> — built-in from day one (Wero: "future channel")</li>
+          <li><strong class="red">Merchant-first</strong> — QR + NFC POS, no Wero onboarding needed</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fee Comparison -->
+  <div class="card">
+    <div class="card-header">
+      <div class="triangle teal"></div>
+      <span class="title">Fee Comparison — The Numbers That Matter</span>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="fee-grid">
+        <div class="fee-col">
+          <div class="fee-label">Visa / Mastercard</div>
+          <div class="fee-number color-red">1–2%</div>
+          <div class="fee-detail">per transaction (merchant pays)<br>interchange + scheme + acquirer fees<br>settlement: 1-3 business days</div>
+          <div class="fee-highlight color-red">+ chargeback risk (up to 120 days)</div>
+        </div>
+        <div class="fee-col">
+          <div class="fee-label">SCT Inst / BlinkPay</div>
+          <div class="fee-number color-teal">~0%</div>
+          <div class="fee-detail">merchant-facing (no interchange)<br>EU Reg. 2024/886: pricing parity<br>with standard transfers (often free)</div>
+          <div class="fee-highlight color-teal">settlement: &lt;10 seconds, irrevocable</div>
+        </div>
+        <div class="fee-col">
+          <div class="fee-label">Digital Euro (future)</div>
+          <div class="fee-number color-green">0%</div>
+          <div class="fee-detail">free for individuals (ECB mandate)<br>merchant fees capped below<br>card interchange by regulation</div>
+          <div class="fee-highlight color-green">BlinkPay: Digital Euro ready from day 1</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Next Steps -->
+  <div class="card">
+    <div class="card-header">
+      <div class="triangle green"></div>
+      <span class="title">Next Steps → Accelerator</span>
+      <span class="card-sub">2 of 5 completed during hackathon</span>
+    </div>
+    <div class="card-body">
+      <ul class="bullets">
+        <li>Productize as accelerator for EU tier-2/3 bank onboarding</li>
+        <li>Integrate with ECB Digital Euro sandbox when available</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
